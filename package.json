@@ -1,0 +1,36 @@
+{
+  "name": "@emperorhan/design-qa",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "files": [
+    "README.md",
+    "bin",
+    "src"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./storybook": "./src/storybook.ts"
+  },
+  "bin": {
+    "design-qa": "./bin/design-qa.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "node ./node_modules/.pnpm/typescript@5.9.3/node_modules/typescript/bin/tsc -p tsconfig.json",
+    "lint": "node ./node_modules/.pnpm/typescript@5.9.3/node_modules/typescript/bin/tsc -p tsconfig.json --pretty false",
+    "smoke:host-flow": "node --import ./node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/loader.mjs ./scripts/smoke-host-flow.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.5"
+  },
+  "dependencies": {
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  }
+}
