@@ -39,7 +39,7 @@ run(["dataset-fix", "--repo", tmpDir]);
 run(["prepare-figma-collection", "--repo", tmpDir]);
 run(["export-agent-task", "figma-dataset", "--agent", "codex", "--repo", tmpDir]);
 run(["ingest", "figma", "--repo", tmpDir]);
-run(["generate", "storybook", "--repo", tmpDir]);
+run(["generate", "--repo", tmpDir]);
 
 const summaryPath = path.join(tmpDir, ".design-qa", "latest-summary.json");
 fs.writeFileSync(
@@ -91,6 +91,9 @@ run(["export-agent-task", "patch", "--agent", "codex", "--repo", tmpDir]);
 assertExists(path.join(tmpDir, ".design-qa", "dataset-fix.json"));
 assertExists(path.join(tmpDir, ".design-qa", "figma", "collection-plan.json"));
 assertExists(path.join(tmpDir, ".design-qa", "agent-tasks", "codex-figma-dataset.md"));
+assertExists(path.join(tmpDir, ".design-qa", "authoring-context.json"));
+assertExists(path.join(tmpDir, ".design-qa", "authoring-brief.md"));
+assertExists(path.join(tmpDir, ".design-qa", "authoring-prompt.md"));
 assertExists(path.join(tmpDir, ".design-qa", "patch-plan.json"));
 assertExists(path.join(tmpDir, ".design-qa", "agent-tasks", "codex-patch.md"));
 

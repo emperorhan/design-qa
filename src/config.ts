@@ -25,11 +25,6 @@ export interface DesignQaEvaluationConfig {
   };
 }
 
-export interface DesignQaGenerationConfig {
-  outDir?: string;
-  emitAgentDocs?: boolean;
-}
-
 export interface DesignQaConsumerConfig {
   storybookUrl?: string;
   threshold?: number;
@@ -39,7 +34,6 @@ export interface DesignQaConsumerConfig {
   irFile?: string;
   evalReportFile?: string;
   fixPromptFile?: string;
-  generation?: DesignQaGenerationConfig;
   evaluation?: DesignQaEvaluationConfig;
   validation?: DesignQaValidationConfig;
   cache?: DesignQaCacheConfig;
@@ -50,7 +44,6 @@ export interface DesignQaConsumerConfig {
 export interface LoadedDesignQaConfig extends Required<Omit<DesignQaConsumerConfig, "registryModule">> {
   cwd: string;
   registryModulePath: string;
-  generation: Required<DesignQaGenerationConfig>;
   evaluation: Required<Omit<DesignQaEvaluationConfig, "semantic">> & {
     semantic: Required<NonNullable<DesignQaEvaluationConfig["semantic"]>>;
   };
@@ -93,10 +86,6 @@ export async function loadDesignQaConfig(cwd = process.cwd()): Promise<LoadedDes
     irFile: config.irFile ?? ".design-qa/design-ir.json",
     evalReportFile: config.evalReportFile ?? ".design-qa/eval-report.json",
     fixPromptFile: config.fixPromptFile ?? ".design-qa/fix-prompt.md",
-    generation: {
-      outDir: config.generation?.outDir ?? "src/generated/design-qa",
-      emitAgentDocs: config.generation?.emitAgentDocs ?? true,
-    },
     evaluation: {
       visualThreshold: config.evaluation?.visualThreshold ?? config.threshold ?? 90,
       semantic: {

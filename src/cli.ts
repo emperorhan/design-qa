@@ -7,7 +7,7 @@ import { runEval } from "./eval";
 import { runPrepareFigmaCollection } from "./figma-collection";
 import { syncFigmaPage } from "./figma-sync";
 import { runFix } from "./fix";
-import { runGenerateStorybook } from "./generate";
+import { runGenerateHandoff } from "./generate";
 import { runIngest } from "./ingest";
 import { runInit } from "./init";
 import { runDesignLoop } from "./loop";
@@ -115,8 +115,7 @@ async function main() {
       return;
     }
     case "generate": {
-      const generateArgs = commandArgs[0] === "storybook" ? commandArgs.slice(1) : commandArgs;
-      const output = json ? await generateDesignQa({ cwd, args: generateArgs }) : await runGenerateStorybook(generateArgs, cwd);
+      const output = json ? await generateDesignQa({ cwd, args: commandArgs }) : await runGenerateHandoff(commandArgs, cwd);
       process.stdout.write(typeof output === "string" ? output : `${JSON.stringify(output, null, 2)}\n`);
       return;
     }
@@ -146,7 +145,7 @@ async function main() {
   design-qa export-agent-task <figma-dataset|patch> [--agent <codex|claude|generic>] [--story <name>] [--repo <path>]
   design-qa doctor [--repo <path>]
   design-qa ingest <figma|screenshot|hybrid> [...] [--repo <path>]
-  design-qa generate [storybook] [--json] [--repo <path>]
+  design-qa generate [--json] [--repo <path>]
   design-qa eval [--story <name>] [--changed] [--threshold <n>] [--max-iterations <n>] [--json] [--repo <path>]
   design-qa fix [--repo <path>]
   design-qa sync-figma-page [--page <name>] [--depth <n>] [--timeout-ms <n>] [--repo <path>]

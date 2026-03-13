@@ -22,7 +22,6 @@ export async function runDoctor(cwd = process.cwd()) {
     config,
     reportRoot,
     irPath,
-    generationDir,
     evalReportPath,
     semanticEvalInputPath,
     semanticEvalOutputPath,
@@ -33,6 +32,9 @@ export async function runDoctor(cwd = process.cwd()) {
     datasetFixPromptPath,
     patchPlanPath,
     patchPromptPath,
+    authoringContextPath,
+    authoringBriefPath,
+    authoringPromptPath,
   } = runtime;
   const checks: Array<{ label: string; ok: boolean; detail: string; action?: string }> = [];
   const activeRegistryEntries = Object.values(config.registry).filter((entry) => !isFixtureEntry(entry));
@@ -240,11 +242,15 @@ export async function runDoctor(cwd = process.cwd()) {
         : `fix icon dataset errors: ${iconDatasetValidation.errors.join("; ")}`,
   });
 
+  const hasAuthoringHandoff =
+    fs.existsSync(authoringContextPath) && fs.existsSync(authoringBriefPath) && fs.existsSync(authoringPromptPath);
   checks.push({
-    label: "generation-dir",
-    ok: fs.existsSync(generationDir),
-    detail: fs.existsSync(generationDir) ? path.relative(cwd, generationDir) : "generated Storybook scaffolds missing",
-    action: fs.existsSync(generationDir) ? undefined : "run design-qa generate storybook",
+    label: "authoring-handoff",
+    ok: hasAuthoringHandoff,
+    detail: hasAuthoringHandoff
+      ? `${path.relative(cwd, authoringContextPath)}, ${path.relative(cwd, authoringBriefPath)}, ${path.relative(cwd, authoringPromptPath)}`
+      : "authoring handoff artifacts missing",
+    action: hasAuthoringHandoff ? undefined : "run design-qa generate",
   });
 
   checks.push({

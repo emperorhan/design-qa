@@ -1,19 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { normalizeIconDataset, renderIconsModule } from "./icons";
+import { normalizeIconDataset } from "./icons";
 import type { DesignIR } from "./ir";
 import { loadExistingOrSeedIr } from "./ingest";
 import { detectStorybookFrameworkSupport, relativeToCwd } from "./node";
 
-const GENERATED_STATES = ["default", "hover", "active", "disabled", "error", "loading", "empty", "long-text", "mobile"];
-
-export async function runGenerateStorybook(_args: string[], cwd = process.cwd()) {
+export async function runGenerateHandoff(_args: string[], cwd = process.cwd()) {
   const frameworkSupport = detectStorybookFrameworkSupport(cwd);
   if (!frameworkSupport.supported) {
     throw new Error(
       [
-        "design-qa generate is React-first and only supports React Storybook hosts.",
+        "design-qa generate is React-first and expects a React Storybook host.",
         `Detected: ${frameworkSupport.detail}.`,
         frameworkSupport.action,
       ]
@@ -23,101 +21,122 @@ export async function runGenerateStorybook(_args: string[], cwd = process.cwd())
   }
 
   const { runtime, ir } = await loadExistingOrSeedIr(cwd);
-  fs.mkdirSync(runtime.generationDir, { recursive: true });
+  fs.mkdirSync(runtime.reportRoot, { recursive: true });
 
-  const tokensPath = path.join(runtime.generationDir, "tokens.generated.ts");
-  const componentsPath = path.join(runtime.generationDir, "components.generated.tsx");
-  const storiesPath = path.join(runtime.generationDir, "designqa.generated.stories.tsx");
-  const registryPath = path.join(runtime.generationDir, "registry.generated.json");
-  const iconsPath = path.join(runtime.generationDir, "icons.generated.tsx");
+  const contextPath = path.join(runtime.reportRoot, "authoring-context.json");
+  const briefPath = path.join(runtime.reportRoot, "authoring-brief.md");
+  const promptPath = path.join(runtime.reportRoot, "authoring-prompt.md");
+  const normalizedIcons = normalizeIconDataset(cwd, runtime.reportRoot);
 
-  const normalizedIcons = normalizeIconDataset(cwd, runtime.generationDir);
+  const context = buildAuthoringContext(ir, {
+    sourceRoot: runtime.config.storyRoot,
+    irPath: relativeToCwd(cwd, runtime.irPath),
+    normalizedIconDir:
+      normalizedIcons.icons.length > 0 ? relativeToCwd(cwd, normalizedIcons.normalizedDir) : null,
+  });
 
-  fs.writeFileSync(tokensPath, renderTokensModule(ir));
-  fs.writeFileSync(componentsPath, renderComponentsModule(ir));
-  fs.writeFileSync(storiesPath, renderStoriesModule(ir));
-  fs.writeFileSync(registryPath, JSON.stringify(buildGeneratedRegistry(ir), null, 2));
-  fs.writeFileSync(iconsPath, renderIconsModule(normalizedIcons.icons));
+  fs.writeFileSync(contextPath, JSON.stringify(context, null, 2));
+  fs.writeFileSync(briefPath, renderAuthoringBrief(context));
+  fs.writeFileSync(promptPath, renderAuthoringPrompt(context));
 
   return [
-    "# Storybook Generation",
+    "# Design QA Generate",
     "",
+    `- Mode: handoff`,
     `- IR: ${relativeToCwd(cwd, runtime.irPath)}`,
-    `- Tokens: ${relativeToCwd(cwd, tokensPath)}`,
-    `- Components: ${relativeToCwd(cwd, componentsPath)}`,
-    `- Stories: ${relativeToCwd(cwd, storiesPath)}`,
-    `- Registry: ${relativeToCwd(cwd, registryPath)}`,
-    `- Icons: ${relativeToCwd(cwd, iconsPath)}`,
+    `- Authoring context: ${relativeToCwd(cwd, contextPath)}`,
+    `- Authoring brief: ${relativeToCwd(cwd, briefPath)}`,
+    `- Authoring prompt: ${relativeToCwd(cwd, promptPath)}`,
     ...(normalizedIcons.icons.length > 0 ? [`- Normalized icon SVGs: ${relativeToCwd(cwd, normalizedIcons.normalizedDir)}`] : []),
   ].join("\n") + "\n";
 }
 
-function renderTokensModule(ir: DesignIR) {
-  return [
-    `export const designTokens = ${JSON.stringify(ir.tokens, null, 2)} as const;`,
-    `export const semanticRoles = ${JSON.stringify(ir.semanticRoles, null, 2)} as const;`,
+function buildAuthoringContext(
+  ir: DesignIR,
+  runtime: {
+    sourceRoot: string;
+    irPath: string;
+    normalizedIconDir: string | null;
+  },
+) {
+  return {
+    generatedAt: new Date().toISOString(),
+    irPath: runtime.irPath,
+    generationTarget: "host-source-files",
+    sourceRoot: runtime.sourceRoot,
+    normalizedIconDir: runtime.normalizedIconDir,
+    tokens: ir.tokens,
+    semanticRoles: ir.semanticRoles,
+    components: ir.components.map((component) => ({
+      name: component.name,
+      storyKey: component.storyKey,
+      source: component.source,
+      variants: component.variants,
+      states: component.states,
+      needsVerification: component.needsVerification ?? false,
+      confidence: component.confidence,
+    })),
+    pages: ir.pages,
+    verificationTargets: ir.verificationTargets,
+    instructions: [
+      "Author real React components and Storybook stories in the host source tree.",
+      "Do not treat generated artifacts as the source of truth.",
+      "Use source stories and source components as the patch targets.",
+      "Prefer tokenized styling, reusable components, and state coverage in Storybook.",
+      "After authoring or patching code, run design-qa eval --json.",
+    ],
+  };
+}
+
+function renderAuthoringBrief(context: ReturnType<typeof buildAuthoringContext>) {
+  const lines = [
+    "# Design QA Authoring Brief",
     "",
-  ].join("\n");
+    `- IR: ${context.irPath}`,
+    `- Generation target: ${context.generationTarget}`,
+    `- Suggested source tree: ${context.sourceRoot}`,
+    `- Normalized icons: ${context.normalizedIconDir ?? "none"}`,
+    "",
+    "## Goal",
+    "Write real React components and Storybook stories in the host repository so the UI matches the collected Figma dataset.",
+    "",
+    "## Rules",
+    "- Author source files, not generated artifacts.",
+    "- Use React and React Storybook only.",
+    "- Cover component states in Storybook.",
+    "- Use normalized icons and tokenized styling when available.",
+    "- Preserve reusable component boundaries.",
+    "",
+    "## Components",
+  ];
+
+  for (const component of context.components) {
+    lines.push(`- ${component.name}: states=${component.states.join(", ")}; variants=${component.variants.join(", ") || "none"}`);
+  }
+
+  lines.push("");
+  lines.push("## Verification Targets");
+  for (const target of context.verificationTargets) {
+    lines.push(`- ${target.label}: ${target.reason}`);
+  }
+
+  return `${lines.join("\n")}\n`;
 }
 
-function renderComponentsModule(ir: DesignIR) {
-  const body = ir.components
-    .map((component) => {
-      const componentName = sanitizeIdentifier(component.name);
-      const hint = component.states.join(", ");
-      return `export function ${componentName}(props: { state?: string } = {}) {\n  return (\n    <div data-design-qa-component="${component.storyKey ?? componentName}" data-state={props.state ?? "default"}>\n      <strong>${component.name}</strong>\n      <span>${hint}</span>\n    </div>\n  );\n}\n`;
-    })
-    .join("\n");
-
-  return `import React from "react";\n\n${body}`;
-}
-
-function renderStoriesModule(ir: DesignIR) {
-  const imports = ir.components
-    .map((component) => sanitizeIdentifier(component.name))
-    .filter((name, index, items) => items.indexOf(name) === index);
-  const importLine = imports.length > 0 ? `import { ${imports.join(", ")} } from "./components.generated";` : `import "./components.generated";`;
-
-  const storyBlocks = ir.components
-    .map((component) => {
-      const componentName = sanitizeIdentifier(component.name);
-      const stories = GENERATED_STATES.map(
-        (state) =>
-          `export const ${componentName}${toPascalCase(state)} = { name: "${component.name} / ${state}", render: () => <${componentName} state="${state}" /> };\n`,
-      ).join("");
-      return stories;
-    })
-    .join("\n\n");
-
-  return `import React from "react";\n${importLine}\n\nconst meta = {\n  title: "Generated/DesignQA",\n  tags: ["design-qa", "generated"],\n};\n\nexport default meta;\n\n${storyBlocks}\n`;
-}
-
-function buildGeneratedRegistry(ir: DesignIR) {
-  return ir.components.map((component) => ({
-    key: component.storyKey ?? component.name,
-    component: component.name,
-    source: component.source,
-    variants: component.variants,
-    states: component.states,
-    needsVerification: component.needsVerification ?? false,
-    verificationTargets: ir.verificationTargets.filter((target) => target.id.includes(component.storyKey ?? "")),
-  }));
-}
-
-function sanitizeIdentifier(value: string) {
-  const cleaned = value.replace(/[^a-zA-Z0-9]+/g, " ").trim();
-  const pascal = cleaned
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part[0]?.toUpperCase() + part.slice(1))
-    .join("");
-  return pascal || "GeneratedComponent";
-}
-
-function toPascalCase(value: string) {
-  return value
-    .split(/[^a-zA-Z0-9]+/)
-    .filter(Boolean)
-    .map((part) => part[0]!.toUpperCase() + part.slice(1))
-    .join("");
+function renderAuthoringPrompt(context: ReturnType<typeof buildAuthoringContext>) {
+  return [
+    "# Design QA Authoring Prompt",
+    "",
+    "Use the provided Design QA context to author or update real React source files and Storybook stories.",
+    "Read `.design-qa/authoring-context.json` first.",
+    "Implement source components and stories that match the collected Figma data.",
+    "Do not edit generated artifacts as the primary solution.",
+    "After writing or updating code, rerun `design-qa eval --json` and use `.design-qa/patch-plan.json` for the next iteration.",
+    "",
+    "Focus on:",
+    "- visual fidelity",
+    "- component architecture quality",
+    "- token consistency",
+    "- Storybook state coverage",
+  ].join("\n") + "\n";
 }

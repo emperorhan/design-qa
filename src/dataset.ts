@@ -136,7 +136,7 @@ export async function runInspectDataset(cwd = process.cwd()) {
 
 export async function runNormalizeIcons(cwd = process.cwd()) {
   const runtime = await loadRuntimeConfig(cwd);
-  const result = normalizeIconDataset(cwd, runtime.generationDir);
+  const result = normalizeIconDataset(cwd, runtime.reportRoot);
   return [
     "# Normalize Icons",
     "",

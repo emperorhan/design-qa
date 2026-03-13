@@ -165,12 +165,10 @@ export function validateIconDataset(cwd: string) {
   return { datasetPath, icons, errors, warnings, checks };
 }
 
-export function normalizeIconDataset(cwd: string, generationDir: string) {
+export function normalizeIconDataset(cwd: string, reportRoot: string) {
   const { datasetPath, icons } = loadIconDataset(cwd);
   const normalizedDir = path.join(cwd, ".design-qa", "figma", "icons", "normalized");
-  const generatedDir = path.join(generationDir, "icons");
   fs.mkdirSync(normalizedDir, { recursive: true });
-  fs.mkdirSync(generatedDir, { recursive: true });
 
   const normalizedIcons = icons.map((icon) => {
     const rawRelativePath = icon.rawSvgPath ?? icon.svgPath;
@@ -179,9 +177,7 @@ export function normalizeIconDataset(cwd: string, generationDir: string) {
     const normalizedSvg = normalizeSvg(rawSvg, icon.viewport);
     const componentName = sanitizeIconComponentName(icon.name || icon.id);
     const normalizedSvgPath = path.join(normalizedDir, `${icon.id}.svg`);
-    const generatedSvgPath = path.join(generatedDir, `${icon.id}.svg`);
     fs.writeFileSync(normalizedSvgPath, normalizedSvg);
-    fs.writeFileSync(generatedSvgPath, normalizedSvg);
 
     return {
       ...icon,
@@ -195,7 +191,7 @@ export function normalizeIconDataset(cwd: string, generationDir: string) {
     } satisfies NormalizedIconEntry;
   });
 
-  const manifestPath = path.join(generationDir, "icons.generated.json");
+  const manifestPath = path.join(reportRoot, "icons.normalized.json");
   fs.writeFileSync(
     manifestPath,
     JSON.stringify(

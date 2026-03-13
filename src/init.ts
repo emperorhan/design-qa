@@ -13,10 +13,6 @@ export async function runInit(cwd = process.cwd(), args: string[] = []) {
   reportDir: ".design-qa",
   storyRoot: "src",
   registryModule: "src/stories/designQa.ts",
-  generation: {
-    outDir: "src/generated/design-qa",
-    emitAgentDocs: true,
-  },
   evaluation: {
     visualThreshold: 90,
     semantic: {
@@ -201,13 +197,15 @@ Generated artifacts:
 - dataset-fix-prompt.md
 - patch-plan.json
 - patch-prompt.md
-- generated code lives in ../src/generated/design-qa
+- authoring-context.json
+- authoring-brief.md
+- authoring-prompt.md
 
 Runtime expectations:
 
 - design-qa is React-first
-- generated stories/components target React Storybook hosts
-- non-React Storybook frameworks such as html-vite are not supported for generated scaffolds
+- authoring artifacts target React Storybook hosts
+- non-React Storybook frameworks such as html-vite are not supported
 `,
     ],
     [
@@ -543,7 +541,7 @@ Collection rules:
   lines.push("- If validation fails, run `design-qa dataset-fix` and hand `.design-qa/dataset-fix.json` plus `.design-qa/dataset-fix-prompt.md` to the agent.");
   lines.push("- Populate src/stories/designQa.ts with real mappings.");
   lines.push("- Replace src/stories/Example.stories.tsx with a real Storybook story or remove the example entry.");
-  lines.push("- Run `design-qa ingest ...`, `design-qa generate storybook`, `design-qa eval`, then use `.design-qa/patch-plan.json` and `.design-qa/patch-prompt.md` for patching.");
+  lines.push("- Run `design-qa ingest ...`, `design-qa generate`, `design-qa eval`, then use `.design-qa/authoring-prompt.md`, `.design-qa/patch-plan.json`, and `.design-qa/patch-prompt.md` for source authoring and patching.");
   lines.push("");
   lines.push("## Suggested package.json scripts");
   lines.push("- `design:qa:doctor`: `design-qa doctor`");
@@ -553,7 +551,7 @@ Collection rules:
   lines.push("- `design:qa:task:dataset`: `design-qa export-agent-task figma-dataset --agent codex`");
   lines.push("- `design:qa:task:patch`: `design-qa export-agent-task patch --agent codex`");
   lines.push("- `design:qa:ingest`: `design-qa ingest hybrid --figma <url> --screenshot <path>`");
-  lines.push("- `design:qa:generate`: `design-qa generate storybook`");
+  lines.push("- `design:qa:generate`: `design-qa generate`");
   lines.push("- `design:qa:eval`: `design-qa eval`");
   lines.push("- `design:qa:fix`: `design-qa fix`");
   lines.push("- `design:qa:loop`: `design-qa loop --max-iterations 5`");

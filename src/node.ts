@@ -52,7 +52,6 @@ export async function loadRuntimeConfig(cwd = process.cwd()) {
   const irPath = path.resolve(cwd, config.irFile);
   const evalReportPath = path.resolve(cwd, config.evalReportFile);
   const fixPromptPath = path.resolve(cwd, config.fixPromptFile);
-  const generationDir = path.resolve(cwd, config.generation.outDir);
   const semanticEvalOutputPath = path.resolve(cwd, config.evaluation.semantic.outputFile);
   const semanticEvalInputPath = path.join(reportRoot, "semantic-eval.input.json");
   const semanticEvalPromptPath = path.join(reportRoot, "semantic-eval-prompt.md");
@@ -62,6 +61,9 @@ export async function loadRuntimeConfig(cwd = process.cwd()) {
   const datasetFixPromptPath = path.join(reportRoot, "dataset-fix-prompt.md");
   const patchPlanPath = path.join(reportRoot, "patch-plan.json");
   const patchPromptPath = path.join(reportRoot, "patch-prompt.md");
+  const authoringContextPath = path.join(reportRoot, "authoring-context.json");
+  const authoringBriefPath = path.join(reportRoot, "authoring-brief.md");
+  const authoringPromptPath = path.join(reportRoot, "authoring-prompt.md");
 
   return {
     config,
@@ -72,7 +74,6 @@ export async function loadRuntimeConfig(cwd = process.cwd()) {
     irPath,
     evalReportPath,
     fixPromptPath,
-    generationDir,
     semanticEvalInputPath,
     semanticEvalOutputPath,
     semanticEvalPromptPath,
@@ -82,6 +83,9 @@ export async function loadRuntimeConfig(cwd = process.cwd()) {
     datasetFixPromptPath,
     patchPlanPath,
     patchPromptPath,
+    authoringContextPath,
+    authoringBriefPath,
+    authoringPromptPath,
   };
 }
 

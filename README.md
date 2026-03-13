@@ -72,7 +72,7 @@ npx design-qa eval --json
 5. `design-qa collect --json`으로 dataset planning artifact를 생성합니다.
 6. native Figma MCP로 `.design-qa/figma/*`를 채웁니다.
 7. `design-qa validate-dataset --json`으로 dataset를 검증합니다.
-8. `design-qa generate --json`으로 React Storybook scaffold를 생성합니다.
+8. `design-qa generate --json`으로 host agent용 authoring handoff를 생성합니다.
 9. Storybook을 실행하고 `design-qa eval --json`로 평가합니다.
 10. `.design-qa/patch-plan.json`과 `.design-qa/patch-prompt.md`를 읽고 source file을 수정합니다.
 11. `design-qa eval --report-only --json`를 반복해서 threshold를 맞춥니다.
@@ -216,11 +216,18 @@ npx design-qa generate
 npx design-qa normalize-icons
 ```
 
-기본 생성 위치는 `src/generated/design-qa`입니다. 생성 결과는 타겟 레포 source tree 안에 들어가며, React Storybook과 source code에서 바로 참조할 수 있는 위치를 기본값으로 사용합니다.
+`generate`는 source code scaffold를 직접 만들지 않습니다. 대신 host agent가 바로 읽고 실제 React source file을 작성할 수 있는 handoff artifact를 만듭니다.
 
-다만 generated 파일은 참고용 scaffold입니다. 실제 렌더와 최종 patch 대상은 여전히 레포의 source story/component입니다.
+생성 결과:
 
-`generate`는 React-first입니다. React와 React Storybook framework가 없는 레포에서는 생성하지 않습니다.
+- `.design-qa/authoring-context.json`
+- `.design-qa/authoring-brief.md`
+- `.design-qa/authoring-prompt.md`
+- normalized icon SVGs when available
+
+실제 렌더와 최종 patch 대상은 항상 레포의 source story/component입니다.
+
+`generate`는 React-first입니다. React와 React Storybook framework가 없는 레포에서는 handoff도 생성하지 않습니다.
 
 Figma dataset를 기준으로 생성하려면 `collect` 이후 `generate`를 실행합니다. Screenshot 또는 hybrid는 필요하면 아래처럼 직접 ingest 할 수 있습니다.
 
@@ -263,7 +270,7 @@ npx design-qa fix
 - page dataset은 `shallow`, `nested`, `full-canvas`로 판정합니다
 - 아이콘은 raw export와 normalized output을 분리 추적합니다
 - generated artifact는 참고용이며, patch 대상은 source file입니다
-- generated scaffold는 React Storybook host를 전제로 합니다
+- authoring handoff는 React Storybook host를 전제로 합니다
 - CLI는 thin wrapper이며, package API와 `--json` 결과가 host agent integration의 기본 경로입니다
 
 ## 검증 모드
@@ -312,14 +319,14 @@ npx design-qa fix
 ]
 ```
 
-`design-qa generate storybook`은 icons dataset이 있으면 다음을 수행합니다.
+`design-qa generate`는 icons dataset이 있으면 다음을 수행합니다.
 
 - raw SVG를 정규화
 - 루트 `width`/`height` 제거
 - `viewBox` 유지 또는 복원
 - 하드코딩 배경 rect 제거
 - 하드코딩 색상을 `currentColor`로 치환
-- 반응형 React 아이콘 컴포넌트를 `icons.generated.tsx`로 생성
+- normalized icon SVG를 정리해서 source authoring에 바로 쓸 수 있게 준비
 
 따라서 generated icon은 기본적으로 아래 특성을 가집니다.
 
@@ -443,7 +450,7 @@ design-qa normalize-icons [--repo <path>]
 design-qa export-agent-task <figma-dataset|patch> [--agent <codex|claude|generic>] [--story <name>] [--repo <path>]
 design-qa doctor [--repo <path>]
 design-qa ingest <figma|screenshot|hybrid> [...] [--repo <path>]
-design-qa generate storybook [--repo <path>]
+design-qa generate [--repo <path>]
 design-qa eval [--repo <path>]
 design-qa fix [--repo <path>]
 design-qa loop [--repo <path>]
@@ -524,9 +531,6 @@ export default {
   storyRoot: "src",
   registryModule: "src/stories/designQa.ts",
   generation: {
-    outDir: "src/generated/design-qa",
-    emitAgentDocs: true,
-  },
   evaluation: {
     visualThreshold: 90,
     semantic: {
@@ -588,12 +592,11 @@ export const DESIGN_QA_REGISTRY = {
 - `.design-qa/semantic-eval.input.json`
 - `.design-qa/semantic-eval-prompt.md`
 - `.design-qa/semantic-eval.output.json`
-- `src/generated/design-qa/tokens.generated.ts`
-- `src/generated/design-qa/components.generated.tsx`
-- `src/generated/design-qa/designqa.generated.stories.tsx`
-- `src/generated/design-qa/registry.generated.json`
-- `src/generated/design-qa/icons.generated.tsx`
-- `src/generated/design-qa/icons/*.svg`
+- `.design-qa/authoring-context.json`
+- `.design-qa/authoring-brief.md`
+- `.design-qa/authoring-prompt.md`
+- `.design-qa/icons.normalized.json`
+- `.design-qa/figma/icons/normalized/*.svg`
 - `.design-qa/dataset-validation.json`
 - `.design-qa/dataset-validation.md`
 - `.design-qa/dataset-fix.json`

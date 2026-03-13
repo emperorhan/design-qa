@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { runCollect, runInspectDataset, runValidateDataset } from "./dataset";
 import { runEval } from "./eval";
-import { runGenerateStorybook } from "./generate";
+import { runGenerateHandoff } from "./generate";
 import { loadRuntimeConfig, relativeToCwd } from "./node";
 
 export type DesignQaToolResult<T> = {
@@ -56,30 +56,29 @@ export async function collectDesignQa(options: CommandOptions = {}): Promise<Des
 }
 
 export async function generateDesignQa(options: CommandOptions = {}): Promise<DesignQaToolResult<{
-  generationDir: string;
+  reportDir: string;
   irPath: string;
 }>> {
   const cwd = options.cwd ?? process.cwd();
   const runtime = await loadRuntimeConfig(cwd);
-  const summary = await runGenerateStorybook(options.args ?? [], cwd);
+  const summary = await runGenerateHandoff(options.args ?? [], cwd);
   return {
     ok: true,
     summary,
     data: {
-      generationDir: relativeToCwd(cwd, runtime.generationDir),
+      reportDir: relativeToCwd(cwd, runtime.reportRoot),
       irPath: relativeToCwd(cwd, runtime.irPath),
     },
     artifacts: [
-      relativeToCwd(cwd, path.join(runtime.generationDir, "tokens.generated.ts")),
-      relativeToCwd(cwd, path.join(runtime.generationDir, "components.generated.tsx")),
-      relativeToCwd(cwd, path.join(runtime.generationDir, "designqa.generated.stories.tsx")),
-      relativeToCwd(cwd, path.join(runtime.generationDir, "registry.generated.json")),
-      relativeToCwd(cwd, path.join(runtime.generationDir, "icons.generated.tsx")),
+      relativeToCwd(cwd, path.join(runtime.reportRoot, "authoring-context.json")),
+      relativeToCwd(cwd, path.join(runtime.reportRoot, "authoring-brief.md")),
+      relativeToCwd(cwd, path.join(runtime.reportRoot, "authoring-prompt.md")),
     ],
     warnings: [],
     errors: [],
     nextActions: [
-      "Review generated scaffold files in the source tree.",
+      "Have the host agent read .design-qa/authoring-context.json and .design-qa/authoring-prompt.md.",
+      "Write real React components and Storybook stories in the host source tree.",
       "Run your React Storybook host.",
       "Run design-qa eval --json when the target stories render.",
     ],
