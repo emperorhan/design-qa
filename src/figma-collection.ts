@@ -29,6 +29,11 @@ interface CollectionItem {
   priority: "P0" | "P1" | "P2";
   status: CollectionStatus;
   lastCollectedAt?: string;
+  candidatePages: string[];
+  preferredPage?: string;
+  pageSearchHints: string[];
+  requiresUserNavigation: boolean;
+  navigationPrompt?: string;
   recommendedAction: string;
   notes: string[];
 }
@@ -140,6 +145,7 @@ function buildCollectionPlan(
 
   for (const token of TOKEN_ITEMS) {
     const state = buildTokenOrAssetStatus(token.name, dataset, datasetValidation, activeEntries);
+    const navigation = buildNavigationHints(token.category, token.name, dataset.context?.pageName);
     items.push({
       id: `${token.category}:${token.name}`,
       collectionItemId: `${token.category}:${token.name}`,
@@ -148,6 +154,7 @@ function buildCollectionPlan(
       figmaUrl: undefined,
       nodeId: undefined,
       storyKey: undefined,
+      ...navigation,
       recommendedAction: recommendedActionForCollection(`${token.category}:${token.name}`, state.status),
       ...state,
     });
@@ -155,6 +162,7 @@ function buildCollectionPlan(
 
   for (const entry of activeEntries) {
     const state = buildPageStatus(entry, dataset, datasetValidation);
+    const navigation = buildNavigationHints("page", entry.key, dataset.context?.pageName, entry);
     items.push({
       id: `page:${entry.key}`,
       collectionItemId: `page:${entry.key}`,
@@ -168,6 +176,7 @@ function buildCollectionPlan(
       collectionMode: entry.figmaUrl ? "link" : "selection",
       requiredArtifacts: ["context", "nodes", "screenshot", "tokens", "components"],
       priority: "P0",
+      ...navigation,
       recommendedAction: recommendedActionForCollection(`page:${entry.key}`, state.status),
       notes: ["Collect the canonical page/frame for this story key."],
       ...state,
@@ -177,6 +186,7 @@ function buildCollectionPlan(
   for (const componentName of COMMON_COMPONENTS) {
     const matchedEntry = activeEntries.find((entry) => `${entry.title} ${entry.exportName}`.toLowerCase().includes(componentName.toLowerCase()));
     const state = buildComponentStatus(componentName, matchedEntry, dataset, datasetValidation);
+    const navigation = buildNavigationHints("component", componentName, dataset.context?.pageName, matchedEntry);
     items.push({
       id: `component:${componentName.toLowerCase()}`,
       collectionItemId: `component:${componentName.toLowerCase()}`,
@@ -190,6 +200,7 @@ function buildCollectionPlan(
       collectionMode: matchedEntry?.figmaUrl ? "link" : "selection",
       requiredArtifacts: ["components", "variants", "tokens", "constraints"],
       priority: componentName === "Header" || componentName === "Footer" || componentName === "Button" ? "P0" : "P1",
+      ...navigation,
       recommendedAction: recommendedActionForCollection(`component:${componentName.toLowerCase()}`, state.status),
       notes: matchedEntry ? ["Mapped from existing registry entry."] : ["Provide a Figma link or selection for this shared component."],
       ...state,
@@ -212,6 +223,7 @@ function buildCollectionPlan(
           : icon?.nodeId
             ? "ready"
             : "pending";
+    const navigation = buildNavigationHints("icon", icon?.name ?? iconCheck.id, dataset.context?.pageName, undefined, icon?.usagePages);
     items.push({
       id: `icon:${iconCheck.id}`,
       collectionItemId: `icon:${iconCheck.id}`,
@@ -230,6 +242,7 @@ function buildCollectionPlan(
       priority: "P1",
       status,
       lastCollectedAt: latestMtimeIso(cwd, ["icons.json", ...presentFiles]),
+      ...navigation,
       recommendedAction: recommendedActionForCollection(`icon:${iconCheck.id}`, status),
       notes: [
         ...(icon?.libraryCandidate ? [`Library candidate: ${icon.libraryCandidate}`] : []),
@@ -371,6 +384,15 @@ function renderCollectionPlanMarkdown(plan: CollectionItem[]) {
     lines.push(`- Priority: ${item.priority}`);
     lines.push(`- Status: ${item.status}`);
     lines.push(`- Last collected at: ${item.lastCollectedAt ?? "unknown"}`);
+    lines.push(`- Preferred page: ${item.preferredPage ?? "unknown"}`);
+    lines.push(`- Candidate pages: ${item.candidatePages.join(", ") || "unknown"}`);
+    lines.push(`- Requires user navigation: ${item.requiresUserNavigation ? "yes" : "no"}`);
+    if (item.navigationPrompt) {
+      lines.push(`- Navigation prompt: ${item.navigationPrompt}`);
+    }
+    if (item.pageSearchHints.length > 0) {
+      lines.push(`- Page search hints: ${item.pageSearchHints.join("; ")}`);
+    }
     lines.push(`- Recommended action: ${item.recommendedAction}`);
     if (item.validationErrors.length > 0) {
       for (const error of item.validationErrors) {
@@ -383,6 +405,51 @@ function renderCollectionPlanMarkdown(plan: CollectionItem[]) {
     lines.push("");
   }
   return `${lines.join("\n")}\n`;
+}
+
+function buildNavigationHints(
+  category: CollectionCategory,
+  name: string,
+  currentPageName?: string,
+  entry?: DesignQaEntry,
+  usagePages?: string[],
+) {
+  const titleSegments = entry?.title?.split("/").filter(Boolean) ?? [];
+  const inferredEntryPage = titleSegments.length > 1 ? titleSegments[0] : entry?.title;
+  const candidatePages = unique(
+    [
+      ...((usagePages ?? []).map((value) => value.split("/")[0]).filter(Boolean)),
+      inferredEntryPage,
+      category === "token" && name === "typography" ? "Foundations" : null,
+      category === "token" && name === "color" ? "Foundations" : null,
+      category === "token" && name === "spacing" ? "Foundations" : null,
+      category === "asset" && name === "favicon" ? "Brand Assets" : null,
+      category === "asset" && name === "og-image" ? "Brand Assets" : null,
+      category === "component" ? "Shared Components" : null,
+      category === "icon" ? "Icons" : null,
+      currentPageName ?? null,
+    ].filter((value): value is string => Boolean(value)),
+  );
+  const preferredPage = candidatePages[0];
+  const pageSearchHints = unique(
+    [
+      category === "page" ? `Look for the main frame or flow for ${name}.` : null,
+      category === "component" ? `Look in shared or reusable component pages for ${name}.` : null,
+      category === "icon" ? `Look in icon libraries and page flow screens for ${name}.` : null,
+      category === "token" ? `Look for canonical design token sources for ${name}.` : null,
+      category === "asset" ? `Look for brand asset exports for ${name}.` : null,
+      currentPageName ? `Current open page is ${currentPageName}.` : null,
+    ].filter((value): value is string => Boolean(value)),
+  );
+  return {
+    candidatePages,
+    preferredPage,
+    pageSearchHints,
+    requiresUserNavigation: candidatePages.length > 0,
+    navigationPrompt: preferredPage
+      ? `If ${name} is not visible on the current Figma page, ask the user to move Figma Desktop to "${preferredPage}" or another matching page from: ${candidatePages.join(", ")}.`
+      : undefined,
+  };
 }
 
 function deriveStatus(requiredCount: number, presentCount: number, hasLocator: boolean, hasErrors: boolean): CollectionStatus {

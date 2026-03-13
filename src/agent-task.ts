@@ -48,6 +48,11 @@ function exportFigmaDatasetTask(cwd: string, outDir: string, storyFilter: string
     validationErrors: string[];
     priority: string;
     status: string;
+    candidatePages?: string[];
+    preferredPage?: string;
+    pageSearchHints?: string[];
+    requiresUserNavigation?: boolean;
+    navigationPrompt?: string;
     recommendedAction: string;
     notes: string[];
   }>;
@@ -232,6 +237,20 @@ function renderDatasetAgentPrompt(task: ReturnType<typeof buildDatasetTaskShape>
     } else {
       lines.push(`- Use link-based MCP for ${item.collectionItemId}.`);
     }
+    if (Array.isArray(item.candidatePages) && item.candidatePages.length > 0) {
+      lines.push(`- Candidate pages: ${item.candidatePages.join(", ")}.`);
+    }
+    if (item.preferredPage) {
+      lines.push(`- Preferred page: ${item.preferredPage}.`);
+    }
+    if (Array.isArray(item.pageSearchHints)) {
+      for (const hint of item.pageSearchHints) {
+        lines.push(`- Page hint: ${hint}`);
+      }
+    }
+    if (item.requiresUserNavigation && item.navigationPrompt) {
+      lines.push(`- If the item is not on the current page, ask the user: ${item.navigationPrompt}`);
+    }
     lines.push(`- Write files: ${item.requiredFiles.join(", ") || "none"}`);
   }
   lines.push("");
@@ -316,6 +335,11 @@ function buildDatasetTaskShape() {
       collectionMode: string;
       requiredFiles: string[];
       priority: string;
+      candidatePages?: string[];
+      preferredPage?: string;
+      pageSearchHints?: string[];
+      requiresUserNavigation?: boolean;
+      navigationPrompt?: string;
     }>,
     completionCriteria: [] as string[],
   };

@@ -18,6 +18,7 @@ export interface FigmaDatasetManifest {
   pageCollectionDepth?: "shallow" | "nested" | "full-canvas";
   svgNormalization?: "raw-only" | "partial" | "complete";
   registryMode?: "real" | "contains-placeholders";
+  collectedFromPages?: string[];
   includedFiles: string[];
   nodeCoverage?: {
     totalRegistryNodes: number;
@@ -230,6 +231,7 @@ export function syncFigmaDatasetManifest(cwd: string, config: LoadedDesignQaConf
     desktopAssetBaseUrl: sourceDetection.desktopAssetBaseUrl ?? undefined,
     pageCollectionDepth: sourceDetection.pageCollectionDepth,
     svgNormalization: sourceDetection.svgNormalization,
+    collectedFromPages: uniqueStrings([dataset.context?.pageName, dataset.manifest.pageName, ...(dataset.manifest.collectedFromPages ?? [])]),
     registryMode: activeRegistryEntries.some((entry) => entry.figmaNodeId && isLikelyPlaceholderNodeId(entry.figmaNodeId))
       ? "contains-placeholders"
       : "real",
@@ -808,6 +810,10 @@ function sameStringSet(left: string[], right: string[]) {
 
 function unique(values: string[]) {
   return values.filter((value, index) => values.indexOf(value) === index);
+}
+
+function uniqueStrings(values: Array<string | undefined>) {
+  return values.filter((value): value is string => Boolean(value)).filter((value, index, list) => list.indexOf(value) === index);
 }
 
 function uniqueObjects<T>(values: T[], getKey: (value: T) => string) {
