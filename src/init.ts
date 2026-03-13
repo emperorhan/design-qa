@@ -14,7 +14,7 @@ export async function runInit(cwd = process.cwd(), args: string[] = []) {
   storyRoot: "src",
   registryModule: "src/stories/designQa.ts",
   generation: {
-    outDir: ".design-qa/generated",
+    outDir: "src/generated/design-qa",
     emitAgentDocs: true,
   },
   evaluation: {
@@ -24,6 +24,11 @@ export async function runInit(cwd = process.cwd(), args: string[] = []) {
       severityThreshold: "medium",
       outputFile: ".design-qa/semantic-eval.output.json",
     },
+  },
+  validation: {
+    mode: "minimal",
+    autoSyncManifest: true,
+    autoSyncCollectionPlan: true,
   },
   tokenSourcePaths: [],
   cache: {

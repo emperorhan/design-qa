@@ -41,6 +41,18 @@ design-qa doctor --repo ./apps/web
 
 ## 빠른 시작
 
+일반적인 사용 흐름은 아래 세 명령으로 정리됩니다.
+
+```bash
+npx design-qa collect
+npx design-qa generate
+npx design-qa loop --max-iterations 5
+```
+
+- `collect`: Figma dataset 준비와 검증, agent task 생성
+- `generate`: IR와 generated Storybook scaffold 생성
+- `loop`: `eval -> patch -> eval`을 반복해서 threshold까지 수렴
+
 ### 1. 레포 초기화와 점검
 
 ```bash
@@ -50,66 +62,82 @@ npx design-qa doctor
 
 `storybook not reachable`가 나오면 먼저 레포의 Storybook setup을 끝내야 합니다.
 
-### 2. Figma dataset 준비
+`doctor`는 이제 아래 항목도 함께 진단합니다.
 
-Figma:
+- Storybook script 존재 여부
+- Storybook package major/version 조합
+- Storybook framework package 존재 여부
+- Storybook 포트가 실제로 열려 있는지
+- collection-plan과 current registry의 정합성
+
+### 2. collect
+
+가장 간단한 형태는 아래와 같습니다.
+
+```bash
+npx design-qa collect --agent codex
+```
+
+`collect`는 아래 작업을 묶어서 수행합니다.
+
+- collection plan 갱신
+- dataset agent task 생성
+- manifest 안전 필드 자동 동기화
+- 현재 dataset source/depth/export 상태 요약
+
+그 다음 Codex 또는 Claude Code가 native Figma MCP로 `.design-qa/figma/*`를 채웁니다.
+
+직접 세부 명령을 쓰고 싶다면 아래 순서를 사용할 수 있습니다.
 
 ```bash
 npx design-qa prepare-figma-collection
 npx design-qa export-agent-task figma-dataset --agent codex
-```
-
-그 다음 Codex 또는 Claude Code가 native Figma MCP로 `.design-qa/figma/*`를 채웁니다. 이후 아래 명령을 실행합니다.
-
-```bash
 npx design-qa detect-figma-source
 npx design-qa validate-dataset
 npx design-qa inspect-dataset
-npx design-qa ingest figma
 ```
 
-Screenshot 또는 hybrid는 직접 ingest 합니다.
+### 3. generate
+
+```bash
+npx design-qa generate
+npx design-qa normalize-icons
+```
+
+기본 생성 위치는 `src/generated/design-qa`입니다. 생성 결과는 타겟 레포 source tree 안에 들어가며, Storybook과 source code에서 바로 참조할 수 있는 위치를 기본값으로 사용합니다.
+
+다만 generated 파일은 참고용 scaffold입니다. 실제 렌더와 최종 patch 대상은 여전히 레포의 source story/component입니다.
+
+Figma dataset를 기준으로 생성하려면 `collect` 이후 `generate`를 실행합니다. Screenshot 또는 hybrid는 필요하면 아래처럼 직접 ingest 할 수 있습니다.
 
 ```bash
 npx design-qa ingest screenshot ./reference.png
 npx design-qa ingest hybrid --figma <url-or-node> --screenshot ./reference.png
+npx design-qa generate
 ```
 
-### 3. Storybook artifact 생성
-
-```bash
-npx design-qa generate storybook
-npx design-qa normalize-icons
-```
-
-generated 파일은 참고용입니다. 실제 렌더는 레포의 source story/component가 담당합니다.
-
-### 4. Storybook 실행과 평가
+### 4. loop
 
 ```bash
 pnpm storybook
+npx design-qa loop --max-iterations 5
+```
+
+`loop`는 내부적으로 아래를 반복합니다.
+
+- Storybook 렌더
+- eval
+- patch artifact 생성
+- host agent patch
+- 재평가
+
+세부 단계를 직접 다루고 싶다면 아래 명령을 사용할 수 있습니다.
+
+```bash
 npx design-qa eval
 npx design-qa export-agent-task patch --agent codex
-```
-
-그 다음 host agent가 아래 파일을 읽고 semantic eval과 patch를 수행합니다.
-
-- `.design-qa/semantic-eval.input.json`
-- `.design-qa/semantic-eval-prompt.md`
-- `.design-qa/patch-plan.json`
-- `.design-qa/patch-prompt.md`
-
-반복:
-
-```bash
 npx design-qa eval --report-only
 npx design-qa fix
-```
-
-또는:
-
-```bash
-npx design-qa loop --max-iterations 5
 ```
 
 ## 운영 규칙
@@ -119,6 +147,21 @@ npx design-qa loop --max-iterations 5
 - page dataset은 `shallow`, `nested`, `full-canvas`로 판정합니다
 - 아이콘은 raw export와 normalized output을 분리 추적합니다
 - generated artifact는 참고용이며, patch 대상은 source file입니다
+
+## 검증 모드
+
+`design-qa`는 `minimal`과 `strict` 두 가지 검증 모드를 지원합니다.
+
+- `minimal`
+  - 작업용 story와 진행 중인 dataset에 맞는 기본 모드입니다
+  - screenshot/reference 누락을 바로 hard fail로 보지 않습니다
+  - 초기 연결과 반복 작업에 적합합니다
+- `strict`
+  - production-grade dataset 검증용 모드입니다
+  - screenshot 같은 reference artifact도 엄격하게 요구합니다
+  - 릴리스 전 최종 점검에 적합합니다
+
+기본값은 `minimal`입니다.
 
 ## Icon Dataset
 
@@ -194,6 +237,8 @@ dataset phase에서 icon SVG를 수집할 때도 같은 규칙을 따릅니다.
 
 `prepare-figma-collection`은 실제 dataset 상태를 읽어 각 항목을 `pending`, `ready`, `partial`, `collected`, `invalid`로 표시합니다.
 각 항목은 `collectionItemId`, `phase`, `recommendedAction`도 함께 제공합니다.
+
+registry가 바뀌면 `validate-dataset` 실행 시 manifest와 collection plan이 자동 동기화됩니다.
 
 host agent에 바로 넘길 task artifact를 만들려면 아래 명령을 사용합니다.
 
@@ -301,6 +346,7 @@ design-qa init [--repo <path>] [--force]
 - live MCP bridge는 dataset가 없을 때만 fallback으로 사용한다
 - browser eval을 쓰려면 `agent-browser`가 설치되어 있어야 한다
 - Storybook 기반 비교를 하려면 Storybook이 실행 가능해야 한다
+- Storybook 패키지는 framework package와 major version이 맞아야 합니다
 
 ### 선택
 
@@ -359,7 +405,7 @@ export default {
   storyRoot: "src",
   registryModule: "src/stories/designQa.ts",
   generation: {
-    outDir: ".design-qa/generated",
+    outDir: "src/generated/design-qa",
     emitAgentDocs: true,
   },
   evaluation: {
@@ -369,6 +415,11 @@ export default {
       severityThreshold: "medium",
       outputFile: ".design-qa/semantic-eval.output.json",
     },
+  },
+  validation: {
+    mode: "minimal",
+    autoSyncManifest: true,
+    autoSyncCollectionPlan: true,
   },
   tokenSourcePaths: ["src/styles/tokens.ts"],
   cache: {
@@ -401,6 +452,13 @@ export const DESIGN_QA_REGISTRY = {
 
 기존 `figmaNodeId`/`figmaUrl`만 있는 entry는 자동으로 `figma` source로 해석합니다.
 
+`validate`는 다음 story 파일 패턴을 모두 검사합니다.
+
+- `*.stories.ts`
+- `*.stories.tsx`
+- `*.stories.js`
+- `*.stories.jsx`
+
 ## Generated Files
 
 기본 출력 위치:
@@ -411,12 +469,12 @@ export const DESIGN_QA_REGISTRY = {
 - `.design-qa/semantic-eval.input.json`
 - `.design-qa/semantic-eval-prompt.md`
 - `.design-qa/semantic-eval.output.json`
-- `.design-qa/generated/tokens.generated.ts`
-- `.design-qa/generated/components.generated.tsx`
-- `.design-qa/generated/stories.generated.tsx`
-- `.design-qa/generated/registry.generated.json`
-- `.design-qa/generated/icons.generated.tsx`
-- `.design-qa/generated/icons/*.svg`
+- `src/generated/design-qa/tokens.generated.ts`
+- `src/generated/design-qa/components.generated.tsx`
+- `src/generated/design-qa/designqa.generated.stories.tsx`
+- `src/generated/design-qa/registry.generated.json`
+- `src/generated/design-qa/icons.generated.tsx`
+- `src/generated/design-qa/icons/*.svg`
 - `.design-qa/dataset-validation.json`
 - `.design-qa/dataset-validation.md`
 - `.design-qa/dataset-fix.json`

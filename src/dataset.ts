@@ -1,12 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { validateFigmaDataset, renderDatasetFixPrompt } from "./figma-dataset";
+import { validateFigmaDataset, renderDatasetFixPrompt, syncFigmaDatasetManifest } from "./figma-dataset";
+import { writeCollectionPlanArtifacts } from "./figma-collection";
 import { normalizeIconDataset } from "./icons";
 import { loadRuntimeConfig, relativeToCwd } from "./node";
+import { runExportAgentTask } from "./agent-task";
 
 export async function runValidateDataset(cwd = process.cwd()) {
   const runtime = await loadRuntimeConfig(cwd);
+  const syncResult = syncFigmaDatasetManifest(cwd, runtime.config);
+  if (runtime.config.validation.autoSyncCollectionPlan) {
+    writeCollectionPlanArtifacts(cwd, runtime.config);
+  }
   const validation = validateFigmaDataset(cwd, runtime.config);
   const jsonPath = path.join(runtime.reportRoot, "dataset-validation.json");
   const markdownPath = path.join(runtime.reportRoot, "dataset-validation.md");
@@ -28,7 +34,43 @@ export async function runValidateDataset(cwd = process.cwd()) {
     `- Markdown: ${relativeToCwd(cwd, markdownPath)}`,
     `- Errors: ${validation.errors.length}`,
     `- Warnings: ${validation.warnings.length}`,
+    `- Manifest sync: ${syncResult.updated ? "updated" : "no changes"}`,
   ].join("\n") + "\n";
+}
+
+export async function runCollect(args: string[], cwd = process.cwd()) {
+  const runtime = await loadRuntimeConfig(cwd);
+  const agent = getStringArg(args, "--agent") ?? "generic";
+  const story = getStringArg(args, "--story");
+
+  const { plan, planPath, markdownPath } = writeCollectionPlanArtifacts(cwd, runtime.config, story);
+  const taskOutput = await runExportAgentTask(["figma-dataset", "--agent", agent, ...(story ? ["--story", story] : [])], cwd);
+  const syncResult = syncFigmaDatasetManifest(cwd, runtime.config);
+  const validation = validateFigmaDataset(cwd, runtime.config);
+
+  const lines = [
+    "# Design QA Collect",
+    "",
+    `- Collection plan: ${relativeToCwd(cwd, planPath)}`,
+    `- Collection markdown: ${relativeToCwd(cwd, markdownPath)}`,
+    `- Planned items: ${plan.length}`,
+    `- Agent: ${agent}`,
+    `- Manifest sync: ${syncResult.updated ? "updated" : "no changes"}`,
+    `- Dataset errors: ${validation.errors.length}`,
+    `- Dataset warnings: ${validation.warnings.length}`,
+    `- MCP source: ${validation.report.sourceDetection.mcpSource}`,
+    `- Asset export mode: ${validation.report.sourceDetection.assetExportMode}`,
+    `- Page depth: ${validation.report.sourceDetection.pageCollectionDepth}`,
+    "",
+    "## Next Step",
+    validation.errors.length === 0
+      ? "- Dataset is ready enough to continue with `design-qa generate`."
+      : "- Fill or repair `.design-qa/figma/*` with the generated agent task, then rerun `design-qa collect` or `design-qa validate-dataset`.",
+    "",
+    "## Agent Task",
+    ...taskOutput.trim().split("\n"),
+  ];
+  return `${lines.join("\n")}\n`;
 }
 
 export async function runDatasetFix(cwd = process.cwd()) {
@@ -103,6 +145,12 @@ export async function runNormalizeIcons(cwd = process.cwd()) {
     `- Manifest: ${relativeToCwd(cwd, result.manifestPath)}`,
     `- Icons: ${result.icons.length}`,
   ].join("\n") + "\n";
+}
+
+function getStringArg(args: string[], flag: string) {
+  const index = args.indexOf(flag);
+  if (index === -1 || index === args.length - 1) return null;
+  return args[index + 1];
 }
 
 function renderDatasetValidationMarkdown(report: ReturnType<typeof validateFigmaDataset>["report"], cwd: string) {

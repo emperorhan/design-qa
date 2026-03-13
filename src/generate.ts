@@ -14,7 +14,7 @@ export async function runGenerateStorybook(_args: string[], cwd = process.cwd())
 
   const tokensPath = path.join(runtime.generationDir, "tokens.generated.ts");
   const componentsPath = path.join(runtime.generationDir, "components.generated.tsx");
-  const storiesPath = path.join(runtime.generationDir, "stories.generated.tsx");
+  const storiesPath = path.join(runtime.generationDir, "designqa.generated.stories.tsx");
   const registryPath = path.join(runtime.generationDir, "registry.generated.json");
   const iconsPath = path.join(runtime.generationDir, "icons.generated.tsx");
 

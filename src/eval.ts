@@ -89,7 +89,11 @@ export async function runEval(args: string[], cwd = process.cwd()) {
 
   const summaryPath = path.join(runtime.reportRoot, "latest-summary.json");
   if (!fs.existsSync(summaryPath)) {
-    throw new Error("No design QA summary found. Run design-qa eval or design-qa loop first.");
+    throw new Error(
+      reportOnly
+        ? "No design QA summary found for --report-only. Run `design-qa eval` first so it can render stories, collect screenshots, and write .design-qa/latest-summary.json."
+        : "No design QA summary found. Run `design-qa eval` or `design-qa loop` first.",
+    );
   }
 
   const summary = JSON.parse(fs.readFileSync(summaryPath, "utf-8")) as LoopSummary;

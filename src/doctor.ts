@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 
 import { validateFigmaDataset } from "./figma-dataset";
@@ -29,6 +30,7 @@ export async function runDoctor(cwd = process.cwd()) {
   const checks: Array<{ label: string; ok: boolean; detail: string; action?: string }> = [];
   const activeRegistryEntries = Object.values(config.registry).filter((entry) => !isFixtureEntry(entry));
   const fixtureRegistryEntries = Object.values(config.registry).filter((entry) => isFixtureEntry(entry));
+  const collectionPlanPath = path.join(cwd, ".design-qa", "figma", "collection-plan.json");
 
   checks.push({
     label: "target-repo",
@@ -95,6 +97,24 @@ export async function runDoctor(cwd = process.cwd()) {
     label: "mode",
     ok: true,
     detail: config.mode,
+  });
+
+  const packageJsonPath = path.join(cwd, "package.json");
+  const packageJson = fs.existsSync(packageJsonPath) ? JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as Record<string, unknown> : null;
+  const packageScripts = packageJson && typeof packageJson.scripts === "object" ? (packageJson.scripts as Record<string, string>) : {};
+  checks.push({
+    label: "storybook-script",
+    ok: Boolean(packageScripts.storybook),
+    detail: packageScripts.storybook ? `storybook -> ${packageScripts.storybook}` : "package.json has no storybook script",
+    action: packageScripts.storybook ? undefined : "add a working storybook script before running design-qa eval",
+  });
+
+  const storybookPackages = detectStorybookPackages(packageJson);
+  checks.push({
+    label: "storybook-packages",
+    ok: storybookPackages.ok,
+    detail: storybookPackages.detail,
+    action: storybookPackages.ok ? undefined : "align Storybook package majors and install a supported framework package such as @storybook/react-vite or @storybook/html-vite",
   });
 
   const bridge = await probeMcpBridge();
@@ -300,6 +320,14 @@ export async function runDoctor(cwd = process.cwd()) {
     action: fs.existsSync(patchPromptPath) ? undefined : "run design-qa eval to generate agent patch instructions",
   });
 
+  const collectionPlanSync = inspectCollectionPlanSync(collectionPlanPath, activeRegistryEntries.map((entry) => entry.key));
+  checks.push({
+    label: "collection-plan",
+    ok: collectionPlanSync.ok,
+    detail: collectionPlanSync.detail,
+    action: collectionPlanSync.ok ? undefined : "run design-qa prepare-figma-collection to refresh stale planning artifacts",
+  });
+
   const figmaManifestPath = path.join(cwd, "src", "figma-sync", "manifest.json");
   if (fs.existsSync(figmaManifestPath)) {
     const ageHours = (Date.now() - fs.statSync(figmaManifestPath).mtimeMs) / (1000 * 60 * 60);
@@ -327,11 +355,23 @@ export async function runDoctor(cwd = process.cwd()) {
   }
 
   const storybookReachable = await isStorybookReachable(config.storybookUrl, cwd);
+  const portReachability = await probeLocalPort(config.storybookUrl);
+  checks.push({
+    label: "storybook-port",
+    ok: portReachability.ok,
+    detail: portReachability.detail,
+    action: portReachability.ok ? undefined : "start Storybook, free the port, or update storybookUrl in designqa.config.ts",
+  });
   checks.push({
     label: "storybook",
     ok: storybookReachable,
     detail: storybookReachable ? `${config.storybookUrl} reachable` : `${config.storybookUrl} not reachable`,
-    action: storybookReachable ? undefined : "start Storybook or update storybookUrl in designqa.config.ts",
+    action:
+      storybookReachable
+        ? undefined
+        : portReachability.ok
+          ? "a process is listening on the Storybook port but HTTP is not healthy; inspect the Storybook startup logs"
+          : "start Storybook or update storybookUrl in designqa.config.ts",
   });
 
   const firstEntry = Object.values(config.registry)[0];
@@ -365,6 +405,30 @@ export async function runDoctor(cwd = process.cwd()) {
   return `${lines.join("\n")}\n`;
 }
 
+function inspectCollectionPlanSync(collectionPlanPath: string, registryKeys: string[]) {
+  if (!fs.existsSync(collectionPlanPath)) {
+    return { ok: false, detail: "collection-plan.json missing" };
+  }
+  try {
+    const plan = JSON.parse(fs.readFileSync(collectionPlanPath, "utf-8")) as Array<{ collectionItemId?: string }>;
+    const planPageKeys = plan
+      .map((item) => item.collectionItemId)
+      .filter((value): value is string => typeof value === "string" && value.startsWith("page:"))
+      .map((value) => value.replace("page:", ""));
+    const stale = planPageKeys.filter((key) => !registryKeys.includes(key));
+    const missing = registryKeys.filter((key) => !planPageKeys.includes(key));
+    if (stale.length === 0 && missing.length === 0) {
+      return { ok: true, detail: "collection plan matches current registry" };
+    }
+    return {
+      ok: false,
+      detail: `stale pages: ${stale.join(", ") || "none"}; missing pages: ${missing.join(", ") || "none"}`,
+    };
+  } catch {
+    return { ok: false, detail: "collection-plan.json is unreadable" };
+  }
+}
+
 function safeSpawn(command: string, args: string[], cwd: string) {
   try {
     return spawnSync(command, args, { cwd, encoding: "utf-8" });
@@ -374,5 +438,58 @@ function safeSpawn(command: string, args: string[], cwd: string) {
       stdout: "",
       stderr: "",
     };
+  }
+}
+
+function detectStorybookPackages(packageJson: Record<string, unknown> | null) {
+  if (!packageJson) {
+    return { ok: false, detail: "package.json missing" };
+  }
+  const deps = {
+    ...(typeof packageJson.dependencies === "object" ? (packageJson.dependencies as Record<string, string>) : {}),
+    ...(typeof packageJson.devDependencies === "object" ? (packageJson.devDependencies as Record<string, string>) : {}),
+  };
+  const storybookDeps = Object.entries(deps).filter(([name]) => name === "storybook" || name.startsWith("@storybook/"));
+  if (storybookDeps.length === 0) {
+    return { ok: false, detail: "no Storybook packages installed" };
+  }
+  const majors = new Map<string, string[]>();
+  for (const [name, version] of storybookDeps) {
+    const major = version.match(/\d+/)?.[0] ?? "unknown";
+    const list = majors.get(major) ?? [];
+    list.push(`${name}@${version}`);
+    majors.set(major, list);
+  }
+  const hasFrameworkPackage = storybookDeps.some(([name]) => /@storybook\/(react|vue|svelte|nextjs|html|web-components)/.test(name));
+  if (!hasFrameworkPackage) {
+    return { ok: false, detail: `Storybook packages found but no framework package detected: ${storybookDeps.map(([name, version]) => `${name}@${version}`).join(", ")}` };
+  }
+  if (majors.size > 1) {
+    return { ok: false, detail: `mixed Storybook majors detected: ${Array.from(majors.values()).flat().join(", ")}` };
+  }
+  return { ok: true, detail: storybookDeps.map(([name, version]) => `${name}@${version}`).join(", ") };
+}
+
+async function probeLocalPort(storybookUrl: string) {
+  try {
+    const url = new URL(storybookUrl);
+    if (!["127.0.0.1", "localhost"].includes(url.hostname)) {
+      return { ok: true, detail: `non-local host ${url.hostname}` };
+    }
+    const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+    const ok = await new Promise<boolean>((resolve) => {
+      const socket = net.createConnection({ host: url.hostname, port }, () => {
+        socket.end();
+        resolve(true);
+      });
+      socket.on("error", () => resolve(false));
+      socket.setTimeout(500, () => {
+        socket.destroy();
+        resolve(false);
+      });
+    });
+    return { ok, detail: ok ? `${url.hostname}:${port} is accepting TCP connections` : `${url.hostname}:${port} is not accepting TCP connections` };
+  } catch {
+    return { ok: false, detail: `invalid Storybook URL: ${storybookUrl}` };
   }
 }

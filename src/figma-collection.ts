@@ -101,13 +101,7 @@ const COMMON_COMPONENTS = ["Header", "Footer", "StatusPanel", "Button", "RadioBo
 export async function runPrepareFigmaCollection(args: string[], cwd = process.cwd()) {
   const runtime = await loadRuntimeConfig(cwd);
   const filter = getStringArg(args, "--story");
-  const plan = buildCollectionPlan(Object.values(runtime.config.registry), cwd, filter, runtime.config);
-  const planPath = path.join(cwd, ".design-qa", "figma", "collection-plan.json");
-  const markdownPath = path.join(cwd, ".design-qa", "figma", "collection-plan.md");
-
-  fs.mkdirSync(path.dirname(planPath), { recursive: true });
-  fs.writeFileSync(planPath, JSON.stringify(plan, null, 2));
-  fs.writeFileSync(markdownPath, renderCollectionPlanMarkdown(plan));
+  const { plan, planPath, markdownPath } = writeCollectionPlanArtifacts(cwd, runtime.config, filter);
 
   return [
     "# Figma Collection Plan",
@@ -117,6 +111,16 @@ export async function runPrepareFigmaCollection(args: string[], cwd = process.cw
     `- Items: ${plan.length}`,
     `- Filter: ${filter ?? "none"}`,
   ].join("\n") + "\n";
+}
+
+export function writeCollectionPlanArtifacts(cwd: string, config: LoadedDesignQaConfig, filter?: string | null) {
+  const plan = buildCollectionPlan(Object.values(config.registry), cwd, filter, config);
+  const planPath = path.join(cwd, ".design-qa", "figma", "collection-plan.json");
+  const markdownPath = path.join(cwd, ".design-qa", "figma", "collection-plan.md");
+  fs.mkdirSync(path.dirname(planPath), { recursive: true });
+  fs.writeFileSync(planPath, JSON.stringify(plan, null, 2));
+  fs.writeFileSync(markdownPath, renderCollectionPlanMarkdown(plan));
+  return { plan, planPath, markdownPath };
 }
 
 function buildCollectionPlan(

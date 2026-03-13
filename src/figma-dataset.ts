@@ -196,6 +196,53 @@ export function loadFigmaDataset(cwd: string): LoadedFigmaDataset {
   };
 }
 
+export function syncFigmaDatasetManifest(cwd: string, config: LoadedDesignQaConfig) {
+  const dataset = loadFigmaDataset(cwd);
+  if (!dataset.manifest || !config.validation.autoSyncManifest) {
+    return { updated: false, manifestPath: dataset.manifestPath };
+  }
+  const actualFiles = collectIncludedFiles(dataset);
+  const activeRegistryEntries = Object.values(config.registry).filter((entry) => !isFixtureEntry(entry));
+  const registryNodes = activeRegistryEntries
+    .map((entry) => entry.figmaNodeId)
+    .filter((value): value is string => typeof value === "string" && !isLikelyPlaceholderNodeId(value));
+  const flattenedNodeIds = new Set(flattenNodeIds(dataset.nodes));
+  const actualCoverage = {
+    totalRegistryNodes: registryNodes.length,
+    coveredRegistryNodes: registryNodes.filter((nodeId) => flattenedNodeIds.has(nodeId)).length,
+    missingNodeIds: registryNodes.filter((nodeId) => !flattenedNodeIds.has(nodeId)),
+  };
+  const sourceDetection = detectDatasetSource(dataset, cwd);
+  const completeness = {
+    context: fs.existsSync(dataset.contextPath) && Boolean(dataset.context),
+    nodes: fs.existsSync(dataset.nodesPath) && dataset.nodes.length > 0,
+    tokens: fs.existsSync(dataset.tokensPath) && Boolean(dataset.tokens),
+    components: fs.existsSync(dataset.componentsPath) && dataset.components.length > 0,
+    icons: fs.existsSync(dataset.iconsPath),
+  };
+  const nextManifest: FigmaDatasetManifest = {
+    ...dataset.manifest,
+    includedFiles: actualFiles,
+    nodeCoverage: actualCoverage,
+    completeness,
+    mcpSource: sourceDetection.mcpSource,
+    assetExportMode: sourceDetection.assetExportMode,
+    desktopAssetBaseUrl: sourceDetection.desktopAssetBaseUrl ?? undefined,
+    pageCollectionDepth: sourceDetection.pageCollectionDepth,
+    svgNormalization: sourceDetection.svgNormalization,
+    registryMode: activeRegistryEntries.some((entry) => entry.figmaNodeId && isLikelyPlaceholderNodeId(entry.figmaNodeId))
+      ? "contains-placeholders"
+      : "real",
+  };
+  const current = JSON.stringify(dataset.manifest);
+  const next = JSON.stringify(nextManifest);
+  if (current !== next) {
+    fs.writeFileSync(dataset.manifestPath, `${JSON.stringify(nextManifest, null, 2)}\n`);
+    return { updated: true, manifestPath: dataset.manifestPath };
+  }
+  return { updated: false, manifestPath: dataset.manifestPath };
+}
+
 export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) {
   const dataset = loadFigmaDataset(cwd);
   const errors: string[] = [];
@@ -449,6 +496,11 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
       ok,
       detail: ok ? path.relative(dataset.rootDir, screenshotFile) : `missing screenshot for ${entry.figmaNodeId}`,
     });
+    if (!ok && config.validation.mode === "strict") {
+      const message = `strict mode requires screenshot for ${entry.key}`;
+      errors.push(message);
+      assetIssues.push(message);
+    }
   }
 
   pageDepthChecks.push({

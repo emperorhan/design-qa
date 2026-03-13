@@ -10,6 +10,12 @@ export interface DesignQaCacheConfig {
   };
 }
 
+export interface DesignQaValidationConfig {
+  mode?: "minimal" | "strict";
+  autoSyncManifest?: boolean;
+  autoSyncCollectionPlan?: boolean;
+}
+
 export interface DesignQaEvaluationConfig {
   visualThreshold?: number;
   semantic?: {
@@ -35,6 +41,7 @@ export interface DesignQaConsumerConfig {
   fixPromptFile?: string;
   generation?: DesignQaGenerationConfig;
   evaluation?: DesignQaEvaluationConfig;
+  validation?: DesignQaValidationConfig;
   cache?: DesignQaCacheConfig;
   tokenSourcePaths?: string[];
   registryModule: string;
@@ -47,6 +54,7 @@ export interface LoadedDesignQaConfig extends Required<Omit<DesignQaConsumerConf
   evaluation: Required<Omit<DesignQaEvaluationConfig, "semantic">> & {
     semantic: Required<NonNullable<DesignQaEvaluationConfig["semantic"]>>;
   };
+  validation: Required<DesignQaValidationConfig>;
   cache: Required<DesignQaCacheConfig>;
   registry: Record<string, DesignQaEntry>;
 }
@@ -86,7 +94,7 @@ export async function loadDesignQaConfig(cwd = process.cwd()): Promise<LoadedDes
     evalReportFile: config.evalReportFile ?? ".design-qa/eval-report.json",
     fixPromptFile: config.fixPromptFile ?? ".design-qa/fix-prompt.md",
     generation: {
-      outDir: config.generation?.outDir ?? ".design-qa/generated",
+      outDir: config.generation?.outDir ?? "src/generated/design-qa",
       emitAgentDocs: config.generation?.emitAgentDocs ?? true,
     },
     evaluation: {
@@ -96,6 +104,11 @@ export async function loadDesignQaConfig(cwd = process.cwd()): Promise<LoadedDes
         severityThreshold: config.evaluation?.semantic?.severityThreshold ?? "medium",
         outputFile: config.evaluation?.semantic?.outputFile ?? ".design-qa/semantic-eval.output.json",
       },
+    },
+    validation: {
+      mode: config.validation?.mode ?? "minimal",
+      autoSyncManifest: config.validation?.autoSyncManifest ?? true,
+      autoSyncCollectionPlan: config.validation?.autoSyncCollectionPlan ?? true,
     },
     cache: {
       figma: {

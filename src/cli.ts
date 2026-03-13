@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { runExportAgentTask } from "./agent-task";
-import { runDatasetFix, runDetectFigmaSource, runInspectDataset, runNormalizeIcons, runValidateDataset } from "./dataset";
+import { runCollect, runDatasetFix, runDetectFigmaSource, runInspectDataset, runNormalizeIcons, runValidateDataset } from "./dataset";
 import { runDoctor } from "./doctor";
 import { runEval } from "./eval";
 import { runPrepareFigmaCollection } from "./figma-collection";
@@ -46,6 +46,10 @@ async function main() {
       process.stdout.write(await runPrepareFigmaCollection(args, cwd));
       return;
     }
+    case "collect": {
+      process.stdout.write(await runCollect(args, cwd));
+      return;
+    }
     case "export-agent-task": {
       process.stdout.write(await runExportAgentTask(args, cwd));
       return;
@@ -79,10 +83,8 @@ async function main() {
       return;
     }
     case "generate": {
-      if (args[0] !== "storybook") {
-        throw new Error("Usage: design-qa generate storybook [--repo <path>]");
-      }
-      process.stdout.write(await runGenerateStorybook(args.slice(1), cwd));
+      const generateArgs = args[0] === "storybook" ? args.slice(1) : args;
+      process.stdout.write(await runGenerateStorybook(generateArgs, cwd));
       return;
     }
     case "eval": {
@@ -100,6 +102,7 @@ async function main() {
     default:
       console.log(`Usage:
   design-qa validate [--repo <path>]
+  design-qa collect [--agent <codex|claude|generic>] [--story <name>] [--repo <path>]
   design-qa validate-dataset [--repo <path>]
   design-qa dataset-fix [--repo <path>]
   design-qa detect-figma-source [--repo <path>]
@@ -109,7 +112,7 @@ async function main() {
   design-qa export-agent-task <figma-dataset|patch> [--agent <codex|claude|generic>] [--story <name>] [--repo <path>]
   design-qa doctor [--repo <path>]
   design-qa ingest <figma|screenshot|hybrid> [...] [--repo <path>]
-  design-qa generate storybook [--repo <path>]
+  design-qa generate [storybook] [--repo <path>]
   design-qa eval [--story <name>] [--changed] [--threshold <n>] [--max-iterations <n>] [--repo <path>]
   design-qa fix [--repo <path>]
   design-qa sync-figma-page [--page <name>] [--depth <n>] [--timeout-ms <n>] [--repo <path>]
