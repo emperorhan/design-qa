@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { validateIconDataset } from "./icons";
 import { loadRuntimeConfig, extractNodeIdFromFigmaUrl, getDesignQaEntryByKey, relativeToCwd } from "./node";
-import { getDesignSourceType } from "./storybook";
+import { getDesignSourceType, isFixtureEntry } from "./storybook";
 
 interface StoryUsage {
   filePath: string;
@@ -29,6 +29,9 @@ export async function validateStories(cwd = process.cwd()) {
     const entry = getDesignQaEntryByKey(config, usage.registryKey);
     if (!entry) {
       errors.push(`${relativeToCwd(cwd, usage.filePath)}:${usage.exportName} references unknown registry key "${usage.registryKey}"`);
+      continue;
+    }
+    if (isFixtureEntry(entry)) {
       continue;
     }
 
@@ -68,6 +71,7 @@ export async function validateStories(cwd = process.cwd()) {
   }
 
   for (const entry of Object.values(config.registry)) {
+    if (isFixtureEntry(entry)) continue;
     if (!seenKeys.has(entry.key)) {
       errors.push(`Registry entry "${entry.key}" is not used by any story export in ${entry.sourcePath}`);
     }

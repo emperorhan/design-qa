@@ -6,7 +6,7 @@ import { validateFigmaDataset } from "./figma-dataset";
 import { loadIconDataset, validateIconDataset } from "./icons";
 import { probeMcpBridge } from "./mcp-bridge";
 import { getStoryIframeUrl, isStorybookReachable, loadRuntimeConfig, probeStoryRender, resolveReferenceAsset } from "./node";
-import { getDesignSourceType } from "./storybook";
+import { getDesignSourceType, isFixtureEntry } from "./storybook";
 
 export async function runDoctor(cwd = process.cwd()) {
   const runtime = await loadRuntimeConfig(cwd);
@@ -27,6 +27,8 @@ export async function runDoctor(cwd = process.cwd()) {
     patchPromptPath,
   } = runtime;
   const checks: Array<{ label: string; ok: boolean; detail: string; action?: string }> = [];
+  const activeRegistryEntries = Object.values(config.registry).filter((entry) => !isFixtureEntry(entry));
+  const fixtureRegistryEntries = Object.values(config.registry).filter((entry) => isFixtureEntry(entry));
 
   checks.push({
     label: "target-repo",
@@ -81,9 +83,12 @@ export async function runDoctor(cwd = process.cwd()) {
 
   checks.push({
     label: "registry",
-    ok: Object.keys(config.registry).length > 0,
-    detail: `${Object.keys(config.registry).length} registry entries`,
-    action: Object.keys(config.registry).length > 0 ? undefined : "populate src/stories/designQa.ts with at least one entry",
+    ok: activeRegistryEntries.length > 0 || fixtureRegistryEntries.length > 0,
+    detail:
+      fixtureRegistryEntries.length > 0
+        ? `${activeRegistryEntries.length} active registry entries, ${fixtureRegistryEntries.length} example fixture entries ignored`
+        : `${activeRegistryEntries.length} registry entries`,
+    action: activeRegistryEntries.length > 0 || fixtureRegistryEntries.length > 0 ? undefined : "populate src/stories/designQa.ts with at least one entry",
   });
 
   checks.push({
@@ -107,7 +112,9 @@ export async function runDoctor(cwd = process.cwd()) {
   });
 
   const referenceCoverage = Object.values(config.registry).reduce(
+    // Example fixture entries are ignored until replaced with real mappings.
     (acc: { withReference: number; missing: string[] }, entry) => {
+      if (isFixtureEntry(entry)) return acc;
       const resolved = resolveReferenceAsset(cwd, reportRoot, entry);
       if (resolved) acc.withReference += 1;
       else acc.missing.push(entry.key);

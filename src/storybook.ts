@@ -12,6 +12,7 @@ export interface DesignQaEntry {
   title: string;
   exportName: string;
   sourcePath: string;
+  fixture?: boolean;
   sourceType?: DesignSourceType;
   figmaNodeId?: string;
   figmaUrl?: string;
@@ -87,6 +88,15 @@ export function getDesignSourceType(entry: DesignQaEntry): DesignSourceType {
     return "figma";
   }
   return "screenshot";
+}
+
+export function isFixtureEntry(entry: DesignQaEntry) {
+  return (
+    entry.fixture === true ||
+    (entry.key === "Pages/Example.Default" &&
+      entry.sourcePath === "src/stories/Example.stories.tsx" &&
+      entry.figmaNodeId === "123:456")
+  );
 }
 
 function sanitizeTitlePart(value: string) {

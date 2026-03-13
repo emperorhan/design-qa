@@ -1,170 +1,128 @@
 # @emperorhan/design-qa
 
-`@emperorhan/design-qa`는 Figma 또는 screenshot에서 디자인 신호를 수집하고, Storybook 기반 UI를 생성한 뒤, `agent-browser`와 평가 루프로 자동 보정하는 프론트엔드 디자인 QA 패키지다.
+`@emperorhan/design-qa`는 Figma 또는 screenshot에서 디자인 신호를 수집하고, Storybook 기반 UI 작업을 평가하고, `agent-browser`와 host agent를 통해 보정 루프를 운영하는 프론트엔드 디자인 QA 패키지입니다.
 
-## Installation
+이 패키지는 프론트엔드 앱과 Storybook 위에서 동작합니다. 앱이나 Storybook을 대신 만들지는 않습니다.
 
-두 가지 설치 방식을 지원한다.
+## 시작 전
 
-### 권장: 타겟 프론트엔드 레포에 로컬 설치
+아래 조건이 먼저 필요합니다.
+
+- 실제 프론트엔드 앱 레포
+- 실행 가능한 Storybook
+- Figma 경로를 쓸 경우 Codex 또는 Claude Code의 native Figma MCP
+- 시각 평가를 쓸 경우 `agent-browser`
+
+빈 디렉토리에서는 바로 동작하지 않습니다. 먼저 앱과 Storybook을 준비합니다.
 
 ```bash
+pnpm create vite my-app --template react-ts
+cd my-app
+pnpm install
+npx storybook@latest init
 pnpm add -D @emperorhan/design-qa
 ```
 
-그 다음 레포 루트에서 실행한다.
+## 설치
+
+```bash
+pnpm add -D @emperorhan/design-qa
+npx design-qa init
+npx design-qa doctor
+```
+
+글로벌 설치도 가능하지만 기본 권장은 레포 로컬 설치입니다.
+
+```bash
+npm i -g @emperorhan/design-qa
+design-qa init --repo ./apps/web
+design-qa doctor --repo ./apps/web
+```
+
+## 빠른 시작
+
+### 1. 레포 초기화와 점검
 
 ```bash
 npx design-qa init
 npx design-qa doctor
 ```
 
-또는 `package.json` script로 감싸서 사용한다.
+`storybook not reachable`가 나오면 먼저 레포의 Storybook setup을 끝내야 합니다.
 
-```json
-{
-  "scripts": {
-    "design:qa:doctor": "design-qa doctor",
-    "design:qa:ingest": "design-qa ingest hybrid --figma <url> --screenshot <path>",
-    "design:qa:generate": "design-qa generate storybook",
-    "design:qa:eval": "design-qa eval",
-    "design:qa:fix": "design-qa fix",
-    "design:qa:loop": "design-qa loop --max-iterations 5"
-  }
-}
-```
+### 2. Figma dataset 준비
 
-### 대안: 글로벌 설치
+Figma:
 
 ```bash
-npm i -g @emperorhan/design-qa
+npx design-qa prepare-figma-collection
+npx design-qa export-agent-task figma-dataset --agent codex
 ```
 
-그 다음 타겟 레포 루트로 이동해서 실행하거나, `--repo`로 레포 경로를 지정한다.
+그 다음 Codex 또는 Claude Code가 native Figma MCP로 `.design-qa/figma/*`를 채웁니다. 이후 아래 명령을 실행합니다.
 
 ```bash
-design-qa init --repo ./apps/web
-design-qa doctor --repo ./apps/web
+npx design-qa detect-figma-source
+npx design-qa validate-dataset
+npx design-qa inspect-dataset
+npx design-qa ingest figma
 ```
 
-실무 기본 권장은 글로벌보다 로컬 설치다. 이유는 설정 파일, generated artifact, Storybook, registry가 모두 타겟 레포에 귀속되기 때문이다.
-
-## Quick Start For A Host Frontend Repo
-
-### 1. 타겟 레포 초기화
-
-레포 루트에서:
+Screenshot 또는 hybrid는 직접 ingest 합니다.
 
 ```bash
-design-qa init
+npx design-qa ingest screenshot ./reference.png
+npx design-qa ingest hybrid --figma <url-or-node> --screenshot ./reference.png
 ```
 
-다른 위치에서 특정 레포를 지정하려면:
+### 3. Storybook artifact 생성
 
 ```bash
-design-qa init --repo ./apps/web
+npx design-qa generate storybook
+npx design-qa normalize-icons
 ```
 
-`init`은 기본적으로 기존 파일을 덮어쓰지 않는다. 다시 생성하려면:
+generated 파일은 참고용입니다. 실제 렌더는 레포의 source story/component가 담당합니다.
+
+### 4. Storybook 실행과 평가
 
 ```bash
-design-qa init --repo ./apps/web --force
+pnpm storybook
+npx design-qa eval
+npx design-qa export-agent-task patch --agent codex
 ```
 
-생성 파일:
+그 다음 host agent가 아래 파일을 읽고 semantic eval과 patch를 수행합니다.
 
-- `designqa.config.ts`
-- `src/stories/designQa.ts`
-- `AGENTS.md`
-- `CLAUDE.md`
-- `codex_prompt.md`
-- `.design-qa/README.md`
+- `.design-qa/semantic-eval.input.json`
+- `.design-qa/semantic-eval-prompt.md`
+- `.design-qa/patch-plan.json`
+- `.design-qa/patch-prompt.md`
 
-### 2. 환경과 wiring 확인
+반복:
 
 ```bash
-design-qa doctor
+npx design-qa eval --report-only
+npx design-qa fix
 ```
 
 또는:
 
 ```bash
-design-qa doctor --repo ./apps/web
+npx design-qa loop --max-iterations 5
 ```
 
-### 3. 디자인 source ingest
+## 운영 규칙
 
-Figma:
-
-```bash
-design-qa prepare-figma-collection
-design-qa detect-figma-source
-design-qa validate-dataset
-design-qa ingest figma <url-or-node>
-```
-
-Screenshot:
-
-```bash
-design-qa ingest screenshot ./reference.png
-```
-
-Hybrid:
-
-```bash
-design-qa ingest hybrid --figma <url-or-node> --screenshot ./reference.png
-```
-
-### 4. Storybook scaffold 생성
-
-```bash
-design-qa generate storybook
-```
-
-### 5. 시각 평가 실행
-
-```bash
-design-qa eval
-```
-
-### 6. Codex / Claude Code에 semantic review 위임
-
-아래 파일을 읽게 하면 된다.
-
-- `.design-qa/semantic-eval.input.json`
-- `.design-qa/semantic-eval-prompt.md`
-
-에이전트는 결과를 아래 파일에 JSON 배열로 써야 한다.
-
-- `.design-qa/semantic-eval.output.json`
-
-patch 수행은 아래 파일을 기준으로 한다.
-
-- `.design-qa/patch-plan.json`
-- `.design-qa/patch-prompt.md`
-
-의미:
-
-- dataset phase는 `.design-qa/figma/*`만 쓴다
-- patch phase는 source file만 수정한다
-- generated artifacts는 읽기 전용 컨텍스트다
-
-그 다음 다시:
-
-```bash
-design-qa eval --report-only
-design-qa fix
-```
-
-또는 반복 루프:
-
-```bash
-design-qa loop --max-iterations 5
-```
+- remote MCP asset wrapper는 성공적인 SVG export가 아닙니다
+- SVG asset이 필요하면 desktop MCP localhost export를 우선 사용합니다
+- page dataset은 `shallow`, `nested`, `full-canvas`로 판정합니다
+- 아이콘은 raw export와 normalized output을 분리 추적합니다
+- generated artifact는 참고용이며, patch 대상은 source file입니다
 
 ## Icon Dataset
 
-아이콘은 일반 node나 screenshot 안에 묻어두지 말고 별도 dataset으로 관리하는 것을 권장한다.
+아이콘은 일반 node나 screenshot 안에 묻어두지 말고 별도 dataset으로 관리하는 것을 권장합니다.
 
 권장 파일:
 
@@ -193,7 +151,7 @@ design-qa loop --max-iterations 5
 ]
 ```
 
-`design-qa generate storybook`은 icons dataset이 있으면 다음을 수행한다.
+`design-qa generate storybook`은 icons dataset이 있으면 다음을 수행합니다.
 
 - raw SVG를 정규화
 - 루트 `width`/`height` 제거
@@ -202,15 +160,15 @@ design-qa loop --max-iterations 5
 - 하드코딩 색상을 `currentColor`로 치환
 - 반응형 React 아이콘 컴포넌트를 `icons.generated.tsx`로 생성
 
-따라서 generated icon은 기본적으로:
+따라서 generated icon은 기본적으로 아래 특성을 가집니다.
 
 - 배경 투명
 - `size="1em"` 기반
 - 부모 텍스트 색을 따름
 
-즉 기존 제품 배경과 충돌하지 않고, 반응형 레이아웃 안에서 고정 폭/고정 높이로 굳지 않도록 설계된다.
+즉 기존 제품 배경과 충돌하지 않고, 반응형 레이아웃 안에서 고정 폭이나 고정 높이로 굳지 않도록 설계합니다.
 
-dataset phase에서 icon SVG를 수집할 때도 같은 규칙을 따른다.
+dataset phase에서 icon SVG를 수집할 때도 같은 규칙을 따릅니다.
 
 - 최종 계약에서 root `width`/`height`를 고정값으로 의존하지 않는다
 - `viewBox`를 유지하거나 복원한다
@@ -220,24 +178,24 @@ dataset phase에서 icon SVG를 수집할 때도 같은 규칙을 따른다.
 
 ## Figma Dataset Workflow
 
-팀 파일럿에서는 direct MCP보다 `agent-prepared dataset`을 권장한다.
+팀 파일럿에서는 direct MCP보다 `agent-prepared dataset`을 권장합니다.
 
 권장 순서:
 
 1. `design-qa prepare-figma-collection`
 2. `design-qa export-agent-task figma-dataset --agent codex` 또는 `--agent claude`
-3. Codex 또는 Claude Code가 native Figma MCP로 `.design-qa/figma/collection-plan.json`의 항목을 채운다.
+3. Codex 또는 Claude Code가 native Figma MCP로 `.design-qa/figma/collection-plan.json`의 항목을 채웁니다.
 4. `design-qa detect-figma-source`
 5. `design-qa validate-dataset`
 6. 실패하면 `design-qa dataset-fix`
-7. 호스트 에이전트가 `.design-qa/dataset-fix.json`과 `.design-qa/dataset-fix-prompt.md`를 읽고 dataset를 보완한다.
+7. 호스트 에이전트가 `.design-qa/dataset-fix.json`과 `.design-qa/dataset-fix-prompt.md`를 읽고 dataset를 보완합니다.
 8. `design-qa inspect-dataset`
 9. `design-qa ingest figma`
 
-`prepare-figma-collection`은 실제 dataset 상태를 읽어 각 항목을 `pending`, `ready`, `partial`, `collected`, `invalid`로 표시한다.
-각 항목은 `collectionItemId`, `phase`, `recommendedAction`도 함께 제공한다.
+`prepare-figma-collection`은 실제 dataset 상태를 읽어 각 항목을 `pending`, `ready`, `partial`, `collected`, `invalid`로 표시합니다.
+각 항목은 `collectionItemId`, `phase`, `recommendedAction`도 함께 제공합니다.
 
-host agent에 바로 넘길 task artifact를 만들려면:
+host agent에 바로 넘길 task artifact를 만들려면 아래 명령을 사용합니다.
 
 ```bash
 design-qa export-agent-task figma-dataset --agent codex
@@ -246,13 +204,13 @@ design-qa export-agent-task patch --agent codex
 
 운영 규칙:
 
-- remote MCP asset wrapper는 성공적인 SVG export가 아니다
-- SVG asset이 필요하면 desktop MCP localhost export를 우선 사용한다
-- page dataset은 `shallow`, `nested`, `full-canvas` 수준으로 판정된다
-- 아이콘은 raw export와 normalized output을 분리 추적한다
-- `design-qa normalize-icons`로 normalized SVG를 생성할 수 있다
+- remote MCP asset wrapper는 성공적인 SVG export가 아닙니다
+- SVG asset이 필요하면 desktop MCP localhost export를 우선 사용합니다
+- page dataset은 `shallow`, `nested`, `full-canvas` 수준으로 판정합니다
+- 아이콘은 raw export와 normalized output을 분리 추적합니다
+- `design-qa normalize-icons`로 normalized SVG를 생성할 수 있습니다
 
-collection plan은 최소 단위와 제품 레벨 단위를 함께 잡는다.
+collection plan은 최소 단위와 제품 레벨 단위를 함께 다룹니다.
 
 - 최소 단위:
   - favicon
@@ -300,8 +258,8 @@ asset 규약:
 
 ## Common CLI Pattern
 
-대부분의 명령은 현재 디렉터리를 타겟 레포로 본다.  
-어느 위치에서든 타겟 레포를 지정하려면 `--repo <path>`를 쓴다.
+대부분의 명령은 현재 디렉터리를 타겟 레포로 봅니다.  
+어느 위치에서든 타겟 레포를 지정하려면 `--repo <path>`를 사용합니다.
 
 ```bash
 design-qa doctor --repo ./apps/web
@@ -331,13 +289,13 @@ design-qa init [--repo <path>] [--force]
 
 ## Environment
 
-환경변수는 `필수`, `선택`, `에이전트 위임용`으로 나뉜다.
+환경변수는 `필수`, `선택`, `에이전트 위임용`으로 나뉩니다.
 
 ### 필수
 
-현재 v1 기준으로 “항상 필요한” 환경변수는 없다.
+현재 v1 기준으로 “항상 필요한” 환경변수는 없습니다.
 
-대신 모드별 런타임 요구사항이 있다.
+대신 모드별 런타임 요구사항이 있습니다.
 
 - Figma ingest의 권장 경로는 host agent가 native Figma MCP로 dataset를 준비하는 것이다
 - live MCP bridge는 dataset가 없을 때만 fallback으로 사용한다
@@ -369,7 +327,7 @@ export DESIGN_LOOP_AUTOFIX_CMD="codex exec < .design-qa/fix-prompt.md"
 
 ### 에이전트 위임용
 
-semantic eval은 환경변수보다 파일 계약이 더 중요하다.
+semantic eval은 환경변수보다 파일 계약이 더 중요합니다.
 
 입력:
 
@@ -380,9 +338,9 @@ semantic eval은 환경변수보다 파일 계약이 더 중요하다.
 
 - `.design-qa/semantic-eval.output.json`
 
-Codex나 Claude Code는 위 입력 파일을 읽고, 출력 파일을 JSON 배열로 작성하면 된다.
+Codex나 Claude Code는 위 입력 파일을 읽고, 출력 파일을 JSON 배열로 작성하면 됩니다.
 
-Figma dataset도 같은 방식으로 agent contract를 가진다.
+Figma dataset도 같은 방식으로 agent contract를 가집니다.
 
 - Codex / Claude Code는 native Figma MCP로 `.design-qa/figma/*`를 작성
 - `design-qa validate-dataset`이 completeness를 검증
@@ -390,7 +348,7 @@ Figma dataset도 같은 방식으로 agent contract를 가진다.
 
 ## Consumer Config
 
-타겟 레포 루트에 `designqa.config.ts`를 둔다.
+타겟 레포 루트에 `designqa.config.ts`를 둡니다.
 
 ```ts
 export default {
@@ -441,7 +399,7 @@ export const DESIGN_QA_REGISTRY = {
 } as const;
 ```
 
-기존 `figmaNodeId`/`figmaUrl`만 있는 entry는 자동으로 `figma` source로 해석된다.
+기존 `figmaNodeId`/`figmaUrl`만 있는 entry는 자동으로 `figma` source로 해석합니다.
 
 ## Generated Files
 
@@ -466,7 +424,7 @@ export const DESIGN_QA_REGISTRY = {
 - `.design-qa/patch-plan.json`
 - `.design-qa/patch-prompt.md`
 
-`patch-plan.json` story 항목에는 다음이 포함된다.
+`patch-plan.json` story 항목에는 다음이 포함됩니다.
 
 - `primaryTargetFile`
 - `secondaryTargetFiles`
@@ -477,7 +435,7 @@ export const DESIGN_QA_REGISTRY = {
 
 ## Runtime Notes
 
-- Storybook URL은 환경변수보다 `designqa.config.ts`에서 관리하는 것을 기본 원칙으로 둔다.
-- `doctor`는 MCP bridge, Storybook, `agent-browser`, semantic artifact 상태를 함께 점검한다.
-- 글로벌 설치를 쓰더라도 파일 출력은 항상 타겟 프론트엔드 레포 안에 쓴다.
-- 현재 패키지는 one-shot code generator보다 반복 보정형 시스템으로 설계되어 있다.
+- Storybook URL은 환경변수보다 `designqa.config.ts`에서 관리하는 것을 기본 원칙으로 둡니다.
+- `doctor`는 MCP bridge, Storybook, `agent-browser`, semantic artifact 상태를 함께 점검합니다.
+- 글로벌 설치를 쓰더라도 파일 출력은 항상 타겟 프론트엔드 레포 안에 씁니다.
+- 현재 패키지는 one-shot code generator보다 반복 보정형 시스템으로 설계되어 있습니다.

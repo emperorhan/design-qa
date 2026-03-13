@@ -3,6 +3,7 @@ import path from "node:path";
 
 import type { LoadedDesignQaConfig } from "./config";
 import { validateIconDataset } from "./icons";
+import { isFixtureEntry } from "./storybook";
 
 export interface FigmaDatasetManifest {
   datasetVersion: 1;
@@ -212,7 +213,8 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
   const iconCompletenessChecks: DatasetCheck[] = [];
 
   const actualFiles = collectIncludedFiles(dataset);
-  const registryNodes = Object.values(config.registry)
+  const activeRegistryEntries = Object.values(config.registry).filter((entry) => !isFixtureEntry(entry));
+  const registryNodes = activeRegistryEntries
     .map((entry) => entry.figmaNodeId)
     .filter((value): value is string => Boolean(value));
   const placeholderRegistryNodes = registryNodes.filter(isLikelyPlaceholderNodeId);
@@ -351,7 +353,7 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
     }
   }
 
-  const unmappedComponents = Object.values(config.registry)
+  const unmappedComponents = activeRegistryEntries
     .filter((entry) => entry.figmaNodeId && !isLikelyPlaceholderNodeId(entry.figmaNodeId))
     .filter((entry) => {
       const byStoryKey = dataset.components.some((component) => component.storyKey === entry.key);
@@ -438,6 +440,7 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
     }
   }
   for (const entry of Object.values(config.registry)) {
+    if (isFixtureEntry(entry)) continue;
     if (!entry.figmaNodeId || isLikelyPlaceholderNodeId(entry.figmaNodeId)) continue;
     const screenshotFile = path.join(dataset.screenshotsDir, `${entry.figmaNodeId.replaceAll(":", "-")}.png`);
     const ok = fs.existsSync(screenshotFile);

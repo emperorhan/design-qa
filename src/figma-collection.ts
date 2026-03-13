@@ -5,7 +5,7 @@ import type { LoadedDesignQaConfig } from "./config";
 import { loadFigmaDataset, validateFigmaDataset } from "./figma-dataset";
 import { validateIconDataset } from "./icons";
 import { loadRuntimeConfig, relativeToCwd } from "./node";
-import type { DesignQaEntry } from "./storybook";
+import { isFixtureEntry, type DesignQaEntry } from "./storybook";
 
 type CollectionCategory = "token" | "asset" | "icon" | "component" | "page";
 type CollectionMode = "selection" | "link";
@@ -128,13 +128,14 @@ function buildCollectionPlan(
   const filteredEntries = filter
     ? entries.filter((entry) => `${entry.key} ${entry.title} ${entry.exportName}`.toLowerCase().includes(filter.toLowerCase()))
     : entries;
+  const activeEntries = filteredEntries.filter((entry) => !isFixtureEntry(entry));
   const dataset = loadFigmaDataset(cwd);
   const datasetValidation = validateFigmaDataset(cwd, config);
   const iconValidation = validateIconDataset(cwd);
   const items: CollectionItem[] = [];
 
   for (const token of TOKEN_ITEMS) {
-    const state = buildTokenOrAssetStatus(token.name, dataset, datasetValidation, filteredEntries);
+    const state = buildTokenOrAssetStatus(token.name, dataset, datasetValidation, activeEntries);
     items.push({
       id: `${token.category}:${token.name}`,
       collectionItemId: `${token.category}:${token.name}`,
@@ -148,7 +149,7 @@ function buildCollectionPlan(
     });
   }
 
-  for (const entry of filteredEntries) {
+  for (const entry of activeEntries) {
     const state = buildPageStatus(entry, dataset, datasetValidation);
     items.push({
       id: `page:${entry.key}`,
@@ -170,7 +171,7 @@ function buildCollectionPlan(
   }
 
   for (const componentName of COMMON_COMPONENTS) {
-    const matchedEntry = filteredEntries.find((entry) => `${entry.title} ${entry.exportName}`.toLowerCase().includes(componentName.toLowerCase()));
+    const matchedEntry = activeEntries.find((entry) => `${entry.title} ${entry.exportName}`.toLowerCase().includes(componentName.toLowerCase()));
     const state = buildComponentStatus(componentName, matchedEntry, dataset, datasetValidation);
     items.push({
       id: `component:${componentName.toLowerCase()}`,
