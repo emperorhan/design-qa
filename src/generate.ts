@@ -68,24 +68,15 @@ function renderStoriesModule(ir: DesignIR) {
   const storyBlocks = ir.components
     .map((component) => {
       const componentName = sanitizeIdentifier(component.name);
-      const title = component.storyKey?.split(".").slice(0, -1).join("/") || `Generated/${component.name}`;
       const stories = GENERATED_STATES.map(
         (state) =>
-          `export const ${componentName}${toPascalCase(state)} = { name: "${state}", render: () => <${componentName} state="${state}" /> };\n`,
+          `export const ${componentName}${toPascalCase(state)} = { name: "${component.name} / ${state}", render: () => <${componentName} state="${state}" /> };\n`,
       ).join("");
-      return [
-        `const ${componentName}Meta = {`,
-        `  title: "${title}",`,
-        `  component: ${componentName},`,
-        `  tags: ["design-qa", "generated"],`,
-        `};`,
-        `export { ${componentName}Meta };`,
-        stories,
-      ].join("\n");
+      return stories;
     })
     .join("\n\n");
 
-  return `import React from "react";\n${importLine}\n\n${storyBlocks}\n`;
+  return `import React from "react";\n${importLine}\n\nconst meta = {\n  title: "Generated/DesignQA",\n  tags: ["design-qa", "generated"],\n};\n\nexport default meta;\n\n${storyBlocks}\n`;
 }
 
 function buildGeneratedRegistry(ir: DesignIR) {
