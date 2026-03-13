@@ -88,6 +88,28 @@ export const Default = withDesignQaStory(DESIGN_QA_REGISTRY["Pages/Example.Defau
       path.join(cwd, "AGENTS.md"),
       `# UI Design QA Workflow
 
+This repository is expected to use design-qa as an agent toolkit.
+
+When the user asks for UI completion with design-qa, follow this sequence:
+
+1. Run \`design-qa doctor\`.
+2. If Figma dataset is missing or stale, run \`design-qa collect --json\`.
+3. Fill or repair \`.design-qa/figma/*\` using native Figma MCP.
+4. Run \`design-qa validate-dataset --json\`.
+5. Run \`design-qa generate --json\`.
+6. Ensure React Storybook is running.
+7. Run \`design-qa eval --json\`.
+8. Patch source files only, then rerun \`design-qa eval --report-only --json\`.
+
+Ask the user only when one of these is missing:
+
+- Figma desktop MCP address if it is not the default \`http://127.0.0.1:3845/mcp\`
+- target Figma file, page, frame, or node scope
+- confirmation of which UI scope to build first when multiple scopes are possible
+- React Storybook host setup if the repo is not ready
+
+Do not ask for information already present in \`designqa.config.ts\`, \`.design-qa/figma/*\`, or the registry.
+
 ## Dataset Phase
 
 Inputs:
@@ -129,6 +151,9 @@ Completion:
 
 - Work from the frontend repo root.
 - Prefer \`npx design-qa ...\` when installed locally.
+- Treat design-qa as a toolkit, not as the coding agent itself.
+- Prefer \`--json\` outputs so you can decide the next action programmatically.
+- If a user asks to build UI from Figma with design-qa, first inspect the repo, then ask only for missing Figma MCP address or target scope.
 - Dataset phase: read collection-plan, dataset-instructions, dataset.schema and write only \`.design-qa/figma/*\`.
 - Patch phase: read eval-report, patch-plan, patch-prompt, semantic output and patch source files only.
 - Use \`.design-qa/patch-plan.json\` to identify the primary source file before editing.
@@ -154,6 +179,8 @@ Use the generated Design QA artifacts as the contract:
 
 Dataset phase writes only \`.design-qa/figma/*\`. Patch phase edits only source files listed in \`.design-qa/patch-plan.json\`.
 When semantic findings are requested, write JSON to \`.design-qa/semantic-eval.output.json\`.
+Use \`design-qa collect --json\`, \`design-qa generate --json\`, and \`design-qa eval --json\` as the primary toolkit commands.
+Ask the user for Figma desktop MCP address only if it is not the default \`http://127.0.0.1:3845/mcp\`, or if the target file/page/frame scope cannot be inferred from the repo or dataset.
 `,
     ],
     [
@@ -174,11 +201,13 @@ Generated artifacts:
 - dataset-fix-prompt.md
 - patch-plan.json
 - patch-prompt.md
-- generated/tokens.generated.ts
-- generated/components.generated.tsx
-- generated/stories.generated.tsx
-- generated/registry.generated.json
-- generated/icons.generated.tsx
+- generated code lives in ../src/generated/design-qa
+
+Runtime expectations:
+
+- design-qa is React-first
+- generated stories/components target React Storybook hosts
+- non-React Storybook frameworks such as html-vite are not supported for generated scaffolds
 `,
     ],
     [
@@ -208,13 +237,22 @@ Generated artifacts:
 Preferred workflow:
 
 1. Use Codex or Claude Code with Figma native MCP.
-2. Run \`design-qa prepare-figma-collection\`.
-3. Use \`.design-qa/figma/collection-plan.json\` to collect tokens, assets, icons, components, and pages.
-4. Write dataset files into this directory.
-5. Run \`design-qa validate-dataset\`.
-6. If validation fails, consume \`.design-qa/dataset-fix.json\` and \`.design-qa/dataset-fix-prompt.md\` and regenerate the missing files.
-7. Use \`design-qa export-agent-task figma-dataset --agent codex\` or \`--agent claude\` when you want a ready-to-run MCP task prompt.
-8. Run \`design-qa ingest figma\`.
+2. Use a React app with a React Storybook framework such as \`@storybook/react-vite\`.
+3. Run \`design-qa prepare-figma-collection\`.
+4. Use \`.design-qa/figma/collection-plan.json\` to collect tokens, assets, icons, components, and pages.
+5. Write dataset files into this directory.
+6. Run \`design-qa validate-dataset\`.
+7. If validation fails, consume \`.design-qa/dataset-fix.json\` and \`.design-qa/dataset-fix-prompt.md\` and regenerate the missing files.
+8. Use \`design-qa export-agent-task figma-dataset --agent codex\` or \`--agent claude\` when you want a ready-to-run MCP task prompt.
+9. Run \`design-qa ingest figma\`.
+
+If the dataset cannot be collected automatically, ask the user only for:
+
+- Figma desktop MCP address when it differs from \`http://127.0.0.1:3845/mcp\`
+- target file or page scope
+- frame or node link when the target scope is ambiguous
+
+Non-React Storybook frameworks such as \`@storybook/html-vite\` are not supported for generated Design QA stories.
 `,
     ],
     [

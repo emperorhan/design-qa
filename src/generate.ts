@@ -4,11 +4,24 @@ import path from "node:path";
 import { normalizeIconDataset, renderIconsModule } from "./icons";
 import type { DesignIR } from "./ir";
 import { loadExistingOrSeedIr } from "./ingest";
-import { relativeToCwd } from "./node";
+import { detectStorybookFrameworkSupport, relativeToCwd } from "./node";
 
 const GENERATED_STATES = ["default", "hover", "active", "disabled", "error", "loading", "empty", "long-text", "mobile"];
 
 export async function runGenerateStorybook(_args: string[], cwd = process.cwd()) {
+  const frameworkSupport = detectStorybookFrameworkSupport(cwd);
+  if (!frameworkSupport.supported) {
+    throw new Error(
+      [
+        "design-qa generate is React-first and only supports React Storybook hosts.",
+        `Detected: ${frameworkSupport.detail}.`,
+        frameworkSupport.action,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+  }
+
   const { runtime, ir } = await loadExistingOrSeedIr(cwd);
   fs.mkdirSync(runtime.generationDir, { recursive: true });
 

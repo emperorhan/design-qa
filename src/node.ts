@@ -222,6 +222,70 @@ export function resolveFromCwd(cwd: string, relativePath: string) {
   return path.join(cwd, relativePath);
 }
 
+export type StorybookFrameworkSupport = {
+  frameworkPackages: string[];
+  supported: boolean;
+  frameworkKind: "react" | "non-react" | "unknown";
+  detail: string;
+  action?: string;
+};
+
+export function detectStorybookFrameworkSupport(cwd = process.cwd()): StorybookFrameworkSupport {
+  const packageJsonPath = path.join(cwd, "package.json");
+  if (!fs.existsSync(packageJsonPath)) {
+    return {
+      frameworkPackages: [],
+      supported: false,
+      frameworkKind: "unknown",
+      detail: "package.json missing",
+      action: "create a React app with Storybook before running design-qa generate",
+    };
+  }
+
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as Record<string, unknown>;
+  const deps = {
+    ...(typeof packageJson.dependencies === "object" ? (packageJson.dependencies as Record<string, string>) : {}),
+    ...(typeof packageJson.devDependencies === "object" ? (packageJson.devDependencies as Record<string, string>) : {}),
+  };
+
+  const frameworkPackages = Object.keys(deps).filter((name) =>
+    /^@storybook\/(react|react-vite|nextjs|nextjs-vite|html|html-vite|web-components|vue|svelte)/.test(name),
+  );
+  const reactInstalled = Boolean(deps.react) && Boolean(deps["react-dom"]);
+  const reactFrameworkPackages = frameworkPackages.filter((name) =>
+    /^@storybook\/(react|react-vite|nextjs|nextjs-vite)/.test(name),
+  );
+
+  if (reactInstalled && reactFrameworkPackages.length > 0) {
+    return {
+      frameworkPackages,
+      supported: true,
+      frameworkKind: "react",
+      detail: `React-ready Storybook detected: ${reactFrameworkPackages.join(", ")}`,
+    };
+  }
+
+  if (frameworkPackages.length > 0) {
+    return {
+      frameworkPackages,
+      supported: false,
+      frameworkKind: "non-react",
+      detail: `non-React Storybook detected: ${frameworkPackages.join(", ")}`,
+      action: "switch the host project to a React Storybook framework such as @storybook/react-vite before running design-qa generate",
+    };
+  }
+
+  return {
+    frameworkPackages: [],
+    supported: false,
+    frameworkKind: "unknown",
+    detail: reactInstalled
+      ? "React is installed, but no supported React Storybook framework package was found"
+      : "React or React Storybook dependencies are missing",
+    action: "install react, react-dom, and a React Storybook framework such as @storybook/react-vite",
+  };
+}
+
 export function resolveReferenceAsset(
   cwd: string,
   reportRoot: string,

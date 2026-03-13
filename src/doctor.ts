@@ -6,7 +6,14 @@ import path from "node:path";
 import { validateFigmaDataset } from "./figma-dataset";
 import { loadIconDataset, validateIconDataset } from "./icons";
 import { probeMcpBridge } from "./mcp-bridge";
-import { getStoryIframeUrl, isStorybookReachable, loadRuntimeConfig, probeStoryRender, resolveReferenceAsset } from "./node";
+import {
+  detectStorybookFrameworkSupport,
+  getStoryIframeUrl,
+  isStorybookReachable,
+  loadRuntimeConfig,
+  probeStoryRender,
+  resolveReferenceAsset,
+} from "./node";
 import { getDesignSourceType, isFixtureEntry } from "./storybook";
 
 export async function runDoctor(cwd = process.cwd()) {
@@ -114,7 +121,15 @@ export async function runDoctor(cwd = process.cwd()) {
     label: "storybook-packages",
     ok: storybookPackages.ok,
     detail: storybookPackages.detail,
-    action: storybookPackages.ok ? undefined : "align Storybook package majors and install a supported framework package such as @storybook/react-vite or @storybook/html-vite",
+    action: storybookPackages.ok ? undefined : "align Storybook package majors and install a supported React Storybook framework such as @storybook/react-vite",
+  });
+
+  const frameworkSupport = detectStorybookFrameworkSupport(cwd);
+  checks.push({
+    label: "react-storybook",
+    ok: frameworkSupport.supported,
+    detail: frameworkSupport.detail,
+    action: frameworkSupport.supported ? undefined : frameworkSupport.action,
   });
 
   const bridge = await probeMcpBridge();

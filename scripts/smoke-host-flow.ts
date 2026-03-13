@@ -10,6 +10,29 @@ const repoRoot = path.resolve(__dirname, "..");
 const cliBin = path.join(repoRoot, "bin", "design-qa.js");
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "design-qa-smoke-"));
 
+fs.writeFileSync(
+  path.join(tmpDir, "package.json"),
+  JSON.stringify(
+    {
+      name: "design-qa-smoke-host",
+      private: true,
+      scripts: {
+        storybook: "storybook dev -p 6006",
+      },
+      dependencies: {
+        react: "^19.0.0",
+        "react-dom": "^19.0.0",
+      },
+      devDependencies: {
+        "@storybook/react-vite": "^8.6.18",
+        storybook: "^8.6.18",
+      },
+    },
+    null,
+    2,
+  ),
+);
+
 run(["init", "--repo", tmpDir, "--force"]);
 run(["validate-dataset", "--repo", tmpDir]);
 run(["dataset-fix", "--repo", tmpDir]);

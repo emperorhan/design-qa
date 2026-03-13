@@ -11,30 +11,59 @@ import { runGenerateStorybook } from "./generate";
 import { runIngest } from "./ingest";
 import { runInit } from "./init";
 import { runDesignLoop } from "./loop";
+import {
+  collectDesignQa,
+  evaluateDesignQa,
+  generateDesignQa,
+  inspectDesignQaDataset,
+  validateDesignQaDataset,
+} from "./toolkit";
 import { validateStories } from "./validate";
 
 async function main() {
   const [command, ...rawArgs] = process.argv.slice(2);
   const { cwd, args } = resolveCliContext(rawArgs);
+  const json = args.includes("--json");
+  const commandArgs = args.filter((arg) => arg !== "--json");
 
   switch (command) {
     case "validate":
     case "validate-stories": {
       const result = await validateStories(cwd);
-      console.log(`Validated ${result.storyCount} design QA stories across ${result.fileCount} story files in ${cwd}.`);
+      if (json) {
+        console.log(
+          JSON.stringify(
+            {
+              ok: true,
+              summary: `Validated ${result.storyCount} design QA stories across ${result.fileCount} story files in ${cwd}.`,
+              data: result,
+              artifacts: [],
+              warnings: [],
+              errors: [],
+              nextActions: [],
+            },
+            null,
+            2,
+          ),
+        );
+      } else {
+        console.log(`Validated ${result.storyCount} design QA stories across ${result.fileCount} story files in ${cwd}.`);
+      }
       return;
     }
     case "loop": {
-      const output = await runDesignLoop(args, cwd);
+      const output = await runDesignLoop(commandArgs, cwd);
       if (output) {
         process.stdout.write(output);
       }
       return;
     }
     case "report": {
-      const output = await runEval(["--report-only", ...args], cwd);
+      const output = json
+        ? await evaluateDesignQa({ cwd, args: ["--report-only", ...commandArgs] })
+        : await runEval(["--report-only", ...commandArgs], cwd);
       if (output) {
-        process.stdout.write(output);
+        process.stdout.write(typeof output === "string" ? output : `${JSON.stringify(output, null, 2)}\n`);
       }
       return;
     }
@@ -47,7 +76,8 @@ async function main() {
       return;
     }
     case "collect": {
-      process.stdout.write(await runCollect(args, cwd));
+      const output = json ? await collectDesignQa({ cwd, args: commandArgs }) : await runCollect(commandArgs, cwd);
+      process.stdout.write(typeof output === "string" ? output : `${JSON.stringify(output, null, 2)}\n`);
       return;
     }
     case "export-agent-task": {
@@ -55,7 +85,8 @@ async function main() {
       return;
     }
     case "validate-dataset": {
-      process.stdout.write(await runValidateDataset(cwd));
+      const output = json ? await validateDesignQaDataset({ cwd }) : await runValidateDataset(cwd);
+      process.stdout.write(typeof output === "string" ? output : `${JSON.stringify(output, null, 2)}\n`);
       return;
     }
     case "dataset-fix": {
@@ -67,7 +98,8 @@ async function main() {
       return;
     }
     case "inspect-dataset": {
-      process.stdout.write(await runInspectDataset(cwd));
+      const output = json ? await inspectDesignQaDataset({ cwd }) : await runInspectDataset(cwd);
+      process.stdout.write(typeof output === "string" ? output : `${JSON.stringify(output, null, 2)}\n`);
       return;
     }
     case "normalize-icons": {
@@ -83,12 +115,14 @@ async function main() {
       return;
     }
     case "generate": {
-      const generateArgs = args[0] === "storybook" ? args.slice(1) : args;
-      process.stdout.write(await runGenerateStorybook(generateArgs, cwd));
+      const generateArgs = commandArgs[0] === "storybook" ? commandArgs.slice(1) : commandArgs;
+      const output = json ? await generateDesignQa({ cwd, args: generateArgs }) : await runGenerateStorybook(generateArgs, cwd);
+      process.stdout.write(typeof output === "string" ? output : `${JSON.stringify(output, null, 2)}\n`);
       return;
     }
     case "eval": {
-      process.stdout.write(await runEval(args, cwd));
+      const output = json ? await evaluateDesignQa({ cwd, args: commandArgs }) : await runEval(commandArgs, cwd);
+      process.stdout.write(typeof output === "string" ? output : `${JSON.stringify(output, null, 2)}\n`);
       return;
     }
     case "fix": {
@@ -102,22 +136,22 @@ async function main() {
     default:
       console.log(`Usage:
   design-qa validate [--repo <path>]
-  design-qa collect [--agent <codex|claude|generic>] [--story <name>] [--repo <path>]
-  design-qa validate-dataset [--repo <path>]
+  design-qa collect [--agent <codex|claude|generic>] [--story <name>] [--json] [--repo <path>]
+  design-qa validate-dataset [--json] [--repo <path>]
   design-qa dataset-fix [--repo <path>]
   design-qa detect-figma-source [--repo <path>]
-  design-qa inspect-dataset [--repo <path>]
+  design-qa inspect-dataset [--json] [--repo <path>]
   design-qa normalize-icons [--repo <path>]
   design-qa prepare-figma-collection [--story <name>] [--repo <path>]
   design-qa export-agent-task <figma-dataset|patch> [--agent <codex|claude|generic>] [--story <name>] [--repo <path>]
   design-qa doctor [--repo <path>]
   design-qa ingest <figma|screenshot|hybrid> [...] [--repo <path>]
-  design-qa generate [storybook] [--repo <path>]
-  design-qa eval [--story <name>] [--changed] [--threshold <n>] [--max-iterations <n>] [--repo <path>]
+  design-qa generate [storybook] [--json] [--repo <path>]
+  design-qa eval [--story <name>] [--changed] [--threshold <n>] [--max-iterations <n>] [--json] [--repo <path>]
   design-qa fix [--repo <path>]
   design-qa sync-figma-page [--page <name>] [--depth <n>] [--timeout-ms <n>] [--repo <path>]
   design-qa loop [--story <name>] [--changed] [--threshold <n>] [--max-iterations <n>] [--repo <path>]
-  design-qa report [--repo <path>]
+  design-qa report [--json] [--repo <path>]
   design-qa init [--repo <path>] [--force]`);
   }
 }
@@ -138,6 +172,26 @@ function resolveCliContext(rawArgs: string[]) {
 }
 
 void main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  const wantsJson = process.argv.includes("--json");
+  const message = error instanceof Error ? error.message : String(error);
+  if (wantsJson) {
+    console.log(
+      JSON.stringify(
+        {
+          ok: false,
+          summary: message,
+          data: null,
+          artifacts: [],
+          warnings: [],
+          errors: [message],
+          nextActions: [],
+        },
+        null,
+        2,
+      ),
+    );
+  } else {
+    console.error(message);
+  }
   process.exit(1);
 });

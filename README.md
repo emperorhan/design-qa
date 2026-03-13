@@ -1,19 +1,19 @@
 # @emperorhan/design-qa
 
-`@emperorhan/design-qa`는 Figma 또는 screenshot에서 디자인 신호를 수집하고, Storybook 기반 UI 작업을 평가하고, `agent-browser`와 host agent를 통해 보정 루프를 운영하는 프론트엔드 디자인 QA 패키지입니다.
+`@emperorhan/design-qa`는 Figma 또는 screenshot에서 디자인 신호를 수집하고, React + Storybook 기반 UI 작업을 평가하며, host agent가 활용할 수 있는 artifact와 machine-readable 결과를 제공하는 프론트엔드 디자인 QA toolkit입니다.
 
-이 패키지는 프론트엔드 앱과 Storybook 위에서 동작합니다. 앱이나 Storybook을 대신 만들지는 않습니다.
+이 패키지는 React 프론트엔드 앱과 React Storybook 위에서 동작합니다. 앱이나 Storybook을 대신 만들지는 않으며, 직접 코드를 수정하는 에이전트도 아닙니다. 대신 호스트 LLM 에이전트가 호출하는 tool/package 역할을 맡습니다.
 
 ## 시작 전
 
 아래 조건이 먼저 필요합니다.
 
 - 실제 프론트엔드 앱 레포
-- 실행 가능한 Storybook
+- 실행 가능한 React Storybook
 - Figma 경로를 쓸 경우 Codex 또는 Claude Code의 native Figma MCP
 - 시각 평가를 쓸 경우 `agent-browser`
 
-빈 디렉토리에서는 바로 동작하지 않습니다. 먼저 앱과 Storybook을 준비합니다.
+빈 디렉토리에서는 바로 동작하지 않습니다. 먼저 React 앱과 React Storybook을 준비합니다.
 
 ```bash
 pnpm create vite my-app --template react-ts
@@ -39,19 +39,129 @@ design-qa init --repo ./apps/web
 design-qa doctor --repo ./apps/web
 ```
 
-## 빠른 시작
+## Agent Workflow
 
-일반적인 사용 흐름은 아래 세 명령으로 정리됩니다.
+호스트 에이전트 기준 기본 흐름은 아래 세 단계입니다.
 
 ```bash
-npx design-qa collect
-npx design-qa generate
-npx design-qa loop --max-iterations 5
+npx design-qa collect --json
+npx design-qa generate --json
+npx design-qa eval --json
 ```
 
-- `collect`: Figma dataset 준비와 검증, agent task 생성
-- `generate`: IR와 generated Storybook scaffold 생성
-- `loop`: `eval -> patch -> eval`을 반복해서 threshold까지 수렴
+- `collect`: Figma dataset 준비 상태 점검, collection plan 동기화, agent task 생성
+- `generate`: IR와 generated React Storybook scaffold 생성
+- `eval`: deterministic/visual 평가와 patch artifact 생성
+
+이후 patch는 `design-qa`가 직접 하지 않습니다. 호스트 에이전트가 `.design-qa/patch-plan.json`과 `.design-qa/patch-prompt.md`를 읽고 source file을 수정한 뒤 `eval`을 다시 호출합니다.
+
+`loop`는 편의 명령으로 남아 있지만, 공식적인 agent workflow는 `eval -> patch with host agent -> eval` 반복입니다.
+
+## Agent Runbook
+
+호스트 LLM 에이전트는 아래 사용자 요청을 직접 처리할 수 있어야 합니다.
+
+> `@emperorhan/design-qa를 이용해서 figma desktop mcp 주소로부터 데이터를 가져와서 storybook을 만들고 design qa 루프를 통해 UI 개발을 완성해줘`
+
+이 요청을 받으면 에이전트는 아래 순서로 움직입니다.
+
+1. React app + React Storybook host인지 확인합니다.
+2. `design-qa doctor`로 현재 레포 상태를 점검합니다.
+3. Figma dataset 수집에 필요한 입력이 충분한지 확인합니다.
+4. 부족한 Figma 정보만 사용자에게 요청합니다.
+5. `design-qa collect --json`으로 dataset planning artifact를 생성합니다.
+6. native Figma MCP로 `.design-qa/figma/*`를 채웁니다.
+7. `design-qa validate-dataset --json`으로 dataset를 검증합니다.
+8. `design-qa generate --json`으로 React Storybook scaffold를 생성합니다.
+9. Storybook을 실행하고 `design-qa eval --json`로 평가합니다.
+10. `.design-qa/patch-plan.json`과 `.design-qa/patch-prompt.md`를 읽고 source file을 수정합니다.
+11. `design-qa eval --report-only --json`를 반복해서 threshold를 맞춥니다.
+
+### 에이전트가 먼저 확인할 것
+
+- 레포가 React host인지
+- Storybook이 React framework인지
+- `agent-browser`가 설치되어 있는지
+- Figma desktop MCP가 열려 있는지
+- 이미 `.design-qa/figma/*` dataset가 있는지
+
+### 에이전트가 사용자에게 물어봐야 하는 경우
+
+아래 정보가 없으면 에이전트가 사용자에게 요청해야 합니다.
+
+- Figma desktop MCP 주소
+  - 기본값은 `http://127.0.0.1:3845/mcp`입니다
+  - 다른 주소를 쓰면 사용자가 알려줘야 합니다
+- 대상 Figma 파일 또는 페이지 범위
+  - file link
+  - page name
+  - frame link
+  - node id
+- 어떤 UI 범위를 먼저 완성할지
+  - 전체 앱
+  - 특정 페이지
+  - 특정 컴포넌트
+- Storybook이 아직 없거나 깨져 있으면
+  - 현재 호스트가 React Storybook으로 갈 수 있는지
+
+에이전트는 이미 레포와 dataset에서 추론 가능한 정보는 다시 묻지 않습니다. 정말 필요한 Figma 범위와 접속 정보만 요청해야 합니다.
+
+### 에이전트가 물으면 안 되는 것
+
+- 이미 `designqa.config.ts`에 있는 값
+- 이미 `.design-qa/figma/manifest.json`에 있는 값
+- 이미 registry에 있는 story/source mapping
+- 단순히 실행해보면 알 수 있는 상태
+
+### 에이전트가 수정하면 안 되는 것
+
+- generated artifact를 source of truth처럼 직접 수정하면 안 됩니다
+- patch는 source story/component/token file에만 적용해야 합니다
+- `.design-qa/*`는 운영 artifact이며, dataset phase 외에는 임의 수정하지 않습니다
+
+## CLI And API
+
+`design-qa`는 CLI와 package API를 둘 다 제공합니다. 권장 주체는 호스트 에이전트입니다.
+
+CLI:
+
+```bash
+npx design-qa collect --json
+npx design-qa generate --json
+npx design-qa eval --json
+```
+
+API:
+
+```ts
+import {
+  collectDesignQa,
+  generateDesignQa,
+  evaluateDesignQa,
+  validateDesignQaDataset,
+  inspectDesignQaDataset,
+} from "@emperorhan/design-qa";
+
+const collectResult = await collectDesignQa({ cwd: process.cwd(), args: ["--agent", "codex"] });
+const generateResult = await generateDesignQa({ cwd: process.cwd() });
+const evalResult = await evaluateDesignQa({ cwd: process.cwd(), args: ["--report-only"] });
+```
+
+핵심 명령은 `--json`을 지원하며 아래 구조를 반환합니다.
+
+```json
+{
+  "ok": true,
+  "summary": "human-readable summary",
+  "data": {},
+  "artifacts": [],
+  "warnings": [],
+  "errors": [],
+  "nextActions": []
+}
+```
+
+호스트 에이전트는 text 출력이 아니라 `--json` 결과를 기준으로 다음 행동을 결정하는 것이 좋습니다.
 
 ### 1. 레포 초기화와 점검
 
@@ -66,9 +176,11 @@ npx design-qa doctor
 
 - Storybook script 존재 여부
 - Storybook package major/version 조합
-- Storybook framework package 존재 여부
+- React Storybook framework package 존재 여부
 - Storybook 포트가 실제로 열려 있는지
 - collection-plan과 current registry의 정합성
+
+`@storybook/html-vite` 같은 non-React Storybook framework는 generated Design QA story와 호환되지 않습니다. 이 경우 `generate`는 실패해야 정상입니다.
 
 ### 2. collect
 
@@ -104,9 +216,11 @@ npx design-qa generate
 npx design-qa normalize-icons
 ```
 
-기본 생성 위치는 `src/generated/design-qa`입니다. 생성 결과는 타겟 레포 source tree 안에 들어가며, Storybook과 source code에서 바로 참조할 수 있는 위치를 기본값으로 사용합니다.
+기본 생성 위치는 `src/generated/design-qa`입니다. 생성 결과는 타겟 레포 source tree 안에 들어가며, React Storybook과 source code에서 바로 참조할 수 있는 위치를 기본값으로 사용합니다.
 
 다만 generated 파일은 참고용 scaffold입니다. 실제 렌더와 최종 patch 대상은 여전히 레포의 source story/component입니다.
+
+`generate`는 React-first입니다. React와 React Storybook framework가 없는 레포에서는 생성하지 않습니다.
 
 Figma dataset를 기준으로 생성하려면 `collect` 이후 `generate`를 실행합니다. Screenshot 또는 hybrid는 필요하면 아래처럼 직접 ingest 할 수 있습니다.
 
@@ -116,29 +230,31 @@ npx design-qa ingest hybrid --figma <url-or-node> --screenshot ./reference.png
 npx design-qa generate
 ```
 
-### 4. loop
+### 4. patch 반복
 
 ```bash
 pnpm storybook
-npx design-qa loop --max-iterations 5
+npx design-qa eval --json
 ```
 
-`loop`는 내부적으로 아래를 반복합니다.
+호스트 에이전트는 아래 artifact를 읽고 patch를 수행합니다.
 
-- Storybook 렌더
-- eval
-- patch artifact 생성
-- host agent patch
-- 재평가
+- `.design-qa/eval-report.json`
+- `.design-qa/patch-plan.json`
+- `.design-qa/patch-prompt.md`
+- `.design-qa/semantic-eval.input.json`
+- `.design-qa/semantic-eval-prompt.md`
 
 세부 단계를 직접 다루고 싶다면 아래 명령을 사용할 수 있습니다.
 
 ```bash
-npx design-qa eval
+npx design-qa eval --json
 npx design-qa export-agent-task patch --agent codex
-npx design-qa eval --report-only
+npx design-qa eval --report-only --json
 npx design-qa fix
 ```
+
+호스트 에이전트가 source file을 수정한 뒤 `eval`을 다시 실행합니다. 이 반복이 실제 폐쇄 루프입니다.
 
 ## 운영 규칙
 
@@ -147,6 +263,8 @@ npx design-qa fix
 - page dataset은 `shallow`, `nested`, `full-canvas`로 판정합니다
 - 아이콘은 raw export와 normalized output을 분리 추적합니다
 - generated artifact는 참고용이며, patch 대상은 source file입니다
+- generated scaffold는 React Storybook host를 전제로 합니다
+- CLI는 thin wrapper이며, package API와 `--json` 결과가 host agent integration의 기본 경로입니다
 
 ## 검증 모드
 
@@ -254,6 +372,7 @@ design-qa export-agent-task patch --agent codex
 - page dataset은 `shallow`, `nested`, `full-canvas` 수준으로 판정합니다
 - 아이콘은 raw export와 normalized output을 분리 추적합니다
 - `design-qa normalize-icons`로 normalized SVG를 생성할 수 있습니다
+- host Storybook은 React framework여야 합니다
 
 collection plan은 최소 단위와 제품 레벨 단위를 함께 다룹니다.
 
