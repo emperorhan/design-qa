@@ -98,6 +98,7 @@ Figma:
 
 ```bash
 design-qa prepare-figma-collection
+design-qa detect-figma-source
 design-qa validate-dataset
 design-qa ingest figma <url-or-node>
 ```
@@ -209,6 +210,14 @@ design-qa loop --max-iterations 5
 
 즉 기존 제품 배경과 충돌하지 않고, 반응형 레이아웃 안에서 고정 폭/고정 높이로 굳지 않도록 설계된다.
 
+dataset phase에서 icon SVG를 수집할 때도 같은 규칙을 따른다.
+
+- 최종 계약에서 root `width`/`height`를 고정값으로 의존하지 않는다
+- `viewBox`를 유지하거나 복원한다
+- 실제 icon path의 `fill`/`stroke`는 가능한 `currentColor`로 정규화한다
+- 의미 없는 background rect/fill은 제거한다
+- 배경이 의미 있으면 icon 자체가 아니라 background guidance로 분리한다
+
 ## Figma Dataset Workflow
 
 팀 파일럿에서는 direct MCP보다 `agent-prepared dataset`을 권장한다.
@@ -216,14 +225,32 @@ design-qa loop --max-iterations 5
 권장 순서:
 
 1. `design-qa prepare-figma-collection`
-2. Codex 또는 Claude Code가 native Figma MCP로 `.design-qa/figma/collection-plan.json`의 항목을 채운다.
-3. `design-qa validate-dataset`
-4. 실패하면 `design-qa dataset-fix`
-5. 호스트 에이전트가 `.design-qa/dataset-fix.json`과 `.design-qa/dataset-fix-prompt.md`를 읽고 dataset를 보완한다.
-6. `design-qa ingest figma`
+2. `design-qa export-agent-task figma-dataset --agent codex` 또는 `--agent claude`
+3. Codex 또는 Claude Code가 native Figma MCP로 `.design-qa/figma/collection-plan.json`의 항목을 채운다.
+4. `design-qa detect-figma-source`
+5. `design-qa validate-dataset`
+6. 실패하면 `design-qa dataset-fix`
+7. 호스트 에이전트가 `.design-qa/dataset-fix.json`과 `.design-qa/dataset-fix-prompt.md`를 읽고 dataset를 보완한다.
+8. `design-qa inspect-dataset`
+9. `design-qa ingest figma`
 
 `prepare-figma-collection`은 실제 dataset 상태를 읽어 각 항목을 `pending`, `ready`, `partial`, `collected`, `invalid`로 표시한다.
 각 항목은 `collectionItemId`, `phase`, `recommendedAction`도 함께 제공한다.
+
+host agent에 바로 넘길 task artifact를 만들려면:
+
+```bash
+design-qa export-agent-task figma-dataset --agent codex
+design-qa export-agent-task patch --agent codex
+```
+
+운영 규칙:
+
+- remote MCP asset wrapper는 성공적인 SVG export가 아니다
+- SVG asset이 필요하면 desktop MCP localhost export를 우선 사용한다
+- page dataset은 `shallow`, `nested`, `full-canvas` 수준으로 판정된다
+- 아이콘은 raw export와 normalized output을 분리 추적한다
+- `design-qa normalize-icons`로 normalized SVG를 생성할 수 있다
 
 collection plan은 최소 단위와 제품 레벨 단위를 함께 잡는다.
 
@@ -288,6 +315,10 @@ design-qa fix --repo ./apps/web
 design-qa validate [--repo <path>]
 design-qa validate-dataset [--repo <path>]
 design-qa dataset-fix [--repo <path>]
+design-qa detect-figma-source [--repo <path>]
+design-qa inspect-dataset [--repo <path>]
+design-qa normalize-icons [--repo <path>]
+design-qa export-agent-task <figma-dataset|patch> [--agent <codex|claude|generic>] [--story <name>] [--repo <path>]
 design-qa doctor [--repo <path>]
 design-qa ingest <figma|screenshot|hybrid> [...] [--repo <path>]
 design-qa generate storybook [--repo <path>]

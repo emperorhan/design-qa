@@ -1,6 +1,7 @@
 import path from "node:path";
 
-import { runDatasetFix, runValidateDataset } from "./dataset";
+import { runExportAgentTask } from "./agent-task";
+import { runDatasetFix, runDetectFigmaSource, runInspectDataset, runNormalizeIcons, runValidateDataset } from "./dataset";
 import { runDoctor } from "./doctor";
 import { runEval } from "./eval";
 import { runPrepareFigmaCollection } from "./figma-collection";
@@ -45,12 +46,28 @@ async function main() {
       process.stdout.write(await runPrepareFigmaCollection(args, cwd));
       return;
     }
+    case "export-agent-task": {
+      process.stdout.write(await runExportAgentTask(args, cwd));
+      return;
+    }
     case "validate-dataset": {
       process.stdout.write(await runValidateDataset(cwd));
       return;
     }
     case "dataset-fix": {
       process.stdout.write(await runDatasetFix(cwd));
+      return;
+    }
+    case "detect-figma-source": {
+      process.stdout.write(await runDetectFigmaSource(cwd));
+      return;
+    }
+    case "inspect-dataset": {
+      process.stdout.write(await runInspectDataset(cwd));
+      return;
+    }
+    case "normalize-icons": {
+      process.stdout.write(await runNormalizeIcons(cwd));
       return;
     }
     case "sync-figma-page": {
@@ -85,7 +102,11 @@ async function main() {
   design-qa validate [--repo <path>]
   design-qa validate-dataset [--repo <path>]
   design-qa dataset-fix [--repo <path>]
+  design-qa detect-figma-source [--repo <path>]
+  design-qa inspect-dataset [--repo <path>]
+  design-qa normalize-icons [--repo <path>]
   design-qa prepare-figma-collection [--story <name>] [--repo <path>]
+  design-qa export-agent-task <figma-dataset|patch> [--agent <codex|claude|generic>] [--story <name>] [--repo <path>]
   design-qa doctor [--repo <path>]
   design-qa ingest <figma|screenshot|hybrid> [...] [--repo <path>]
   design-qa generate storybook [--repo <path>]

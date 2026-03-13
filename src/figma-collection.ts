@@ -193,8 +193,12 @@ function buildCollectionPlan(
 
   for (const iconCheck of iconValidation.checks) {
     const icon = iconValidation.icons.find((item) => item.id === iconCheck.id);
-    const normalizedSvgPath = icon?.svgPath ? toDatasetRelativePath(icon.svgPath) : "icons/<icon-id>.svg";
-    const presentFiles = icon?.svgPath && fs.existsSync(path.resolve(cwd, icon.svgPath)) ? [normalizedSvgPath] : [];
+    const rawSvgPath = icon?.rawSvgPath ?? icon?.svgPath;
+    const normalizedSvgPath = icon?.normalizedSvgPath;
+    const presentFiles = [
+      rawSvgPath && fs.existsSync(path.resolve(cwd, rawSvgPath)) ? toDatasetRelativePath(rawSvgPath) : null,
+      normalizedSvgPath && fs.existsSync(path.resolve(cwd, normalizedSvgPath)) ? toDatasetRelativePath(normalizedSvgPath) : null,
+    ].filter((value): value is string => Boolean(value));
     const status =
       iconCheck.errors.length > 0 || iconCheck.warnings.length > 0
         ? "invalid"
@@ -215,7 +219,7 @@ function buildCollectionPlan(
       nodeId: icon?.nodeId,
       collectionMode: icon?.nodeId ? "selection" : "link",
       requiredArtifacts: ["svg", "icon-metadata"],
-      requiredFiles: [normalizedSvgPath, "icons.json"],
+      requiredFiles: [toDatasetRelativePath(rawSvgPath ?? "icons/raw/<icon-id>.svg"), "icons.json"],
       presentFiles: ["icons.json", ...presentFiles].filter((value, index, list) => list.indexOf(value) === index),
       validationErrors: [...iconCheck.errors, ...iconCheck.warnings],
       priority: "P1",
@@ -224,6 +228,8 @@ function buildCollectionPlan(
       recommendedAction: recommendedActionForCollection(`icon:${iconCheck.id}`, status),
       notes: [
         ...(icon?.libraryCandidate ? [`Library candidate: ${icon.libraryCandidate}`] : []),
+        `Export kind: ${iconCheck.exportKind}`,
+        `Normalization status: ${iconCheck.normalizationStatus}`,
         "Ensure normalized SVG stays background-transparent and currentColor-driven.",
       ],
     });
@@ -306,6 +312,9 @@ function buildPageStatus(entry: DesignQaEntry, dataset: ReturnType<typeof loadFi
   const nodePresent = entry.figmaNodeId ? flattenNodeIds(dataset.nodes).includes(entry.figmaNodeId) : false;
   if (entry.figmaNodeId && !nodePresent) {
     validationErrors.push(`node ${entry.figmaNodeId} missing from nodes.json`);
+  }
+  if (validation.report.sourceDetection.pageCollectionDepth === "shallow") {
+    validationErrors.push("page tree is shallow; recollect nested or full-canvas nodes");
   }
   return {
     requiredFiles,

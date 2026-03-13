@@ -95,8 +95,9 @@ Outputs:
 
 Completion:
 1. Fill the dataset with native Figma MCP.
-2. Run \`design-qa validate-dataset\`.
-3. If validation fails, use \`.design-qa/dataset-fix.json\` and \`.design-qa/dataset-fix-prompt.md\`.
+2. Generate a ready-to-run task with \`design-qa export-agent-task figma-dataset --agent codex\` or \`--agent claude\`.
+3. Run \`design-qa validate-dataset\`.
+4. If validation fails, use \`.design-qa/dataset-fix.json\` and \`.design-qa/dataset-fix-prompt.md\`.
 
 ## Patch Phase
 
@@ -112,7 +113,8 @@ Outputs:
 Completion:
 1. Patch the primary target file first.
 2. Treat generated artifacts as read-only context.
-3. Rerun \`design-qa eval --report-only\`.
+3. Generate a ready-to-run task with \`design-qa export-agent-task patch --agent codex\` or \`--agent claude\`.
+4. Rerun \`design-qa eval --report-only\`.
 `,
     ],
     [
@@ -140,6 +142,8 @@ Use the generated Design QA artifacts as the contract:
 - \`.design-qa/semantic-eval-prompt.md\`
 - \`.design-qa/patch-plan.json\`
 - \`.design-qa/patch-prompt.md\`
+- \`.design-qa/agent-tasks/*.json\`
+- \`.design-qa/agent-tasks/*.md\`
 - \`.design-qa/fix-prompt.md\`
 
 Dataset phase writes only \`.design-qa/figma/*\`. Patch phase edits only source files listed in \`.design-qa/patch-plan.json\`.
@@ -203,7 +207,8 @@ Preferred workflow:
 4. Write dataset files into this directory.
 5. Run \`design-qa validate-dataset\`.
 6. If validation fails, consume \`.design-qa/dataset-fix.json\` and \`.design-qa/dataset-fix-prompt.md\` and regenerate the missing files.
-7. Run \`design-qa ingest figma\`.
+7. Use \`design-qa export-agent-task figma-dataset --agent codex\` or \`--agent claude\` when you want a ready-to-run MCP task prompt.
+8. Run \`design-qa ingest figma\`.
 `,
     ],
     [
@@ -239,6 +244,10 @@ Collection rules:
 - icon items require \`icons.json\` plus SVG export
 - page items require \`screenshots/<node-id>.png\` when available
 - component items must land in \`components.json\` with variants or sourceNodeId
+- remote MCP asset wrappers do not count as successful SVG exports
+- prefer desktop MCP localhost asset export when SVG assets are required
+- store raw icon exports separately from normalized outputs
+- icon SVGs should preserve or restore viewBox, avoid fixed root width/height in the final contract, use currentColor for fill/stroke when possible, and keep non-semantic backgrounds transparent
 `,
     ],
     [
@@ -248,6 +257,12 @@ Collection rules:
           manifest: {
             datasetVersion: "number",
             extractionMode: "native-mcp-remote | native-mcp-desktop | direct-mcp",
+            mcpSource: "remote | desktop | mixed | unknown",
+            assetExportMode: "local-export | remote-wrapper | mixed | unavailable",
+            desktopAssetBaseUrl: "optional base URL",
+            pageCollectionDepth: "shallow | nested | full-canvas",
+            svgNormalization: "raw-only | partial | complete",
+            registryMode: "real | contains-placeholders",
             generatedAt: "ISO date string",
             includedFiles: ["string"],
             completeness: {
@@ -278,6 +293,12 @@ Collection rules:
         {
           datasetVersion: 1,
           extractionMode: "native-mcp-desktop",
+          mcpSource: "desktop",
+          assetExportMode: "local-export",
+          desktopAssetBaseUrl: "http://127.0.0.1:3845",
+          pageCollectionDepth: "nested",
+          svgNormalization: "raw-only",
+          registryMode: "contains-placeholders",
           generatedAt: new Date(0).toISOString(),
           fileKey: "FILE_KEY",
           fileName: "Example File",
@@ -382,8 +403,17 @@ Collection rules:
             nodeId: "123:457",
             variant: "line",
             semanticRole: "action/download",
+            source: "desktop",
+            exportKind: "local-svg",
+            normalizationStatus: "raw",
+            rawSvgPath: ".design-qa/figma/icons/icon-download-16.svg",
             svgPath: ".design-qa/figma/icons/icon-download-16.svg",
+            normalizedSvgPath: ".design-qa/figma/icons/normalized/icon-download-16.svg",
+            originalRef: "http://127.0.0.1:3845/assets/icon-download-16.svg",
+            resolvedLocalPath: ".design-qa/figma/icons/icon-download-16.svg",
             usage: ["Pages/Example.Default"],
+            usagePages: ["Pages/Example.Default"],
+            usageNodes: ["123:456"],
             libraryCandidate: "download",
             viewport: { width: 16, height: 16 },
             background: {
@@ -402,6 +432,12 @@ Collection rules:
         {
           datasetVersion: 1,
           extractionMode: "native-mcp-desktop",
+          mcpSource: "desktop",
+          assetExportMode: "local-export",
+          desktopAssetBaseUrl: "http://127.0.0.1:3845",
+          pageCollectionDepth: "nested",
+          svgNormalization: "raw-only",
+          registryMode: "contains-placeholders",
           generatedAt: new Date().toISOString(),
           fileKey: "FILE_KEY",
           fileName: "Example File",
@@ -457,6 +493,7 @@ Collection rules:
   lines.push("- Add @emperorhan/design-qa as a devDependency in this repo or use a global install.");
   lines.push("- Run `design-qa doctor --repo <path>` or from the repo root.");
   lines.push("- Run `design-qa prepare-figma-collection` to generate the collection checklist.");
+  lines.push("- Run `design-qa export-agent-task figma-dataset --agent codex` or `--agent claude` to generate a ready-to-run dataset task.");
   lines.push("- Ask Codex or Claude Code with native Figma MCP to fill `.design-qa/figma/*` according to the collection plan.");
   lines.push("- Run `design-qa validate-dataset` before ingesting Figma data.");
   lines.push("- If validation fails, run `design-qa dataset-fix` and hand `.design-qa/dataset-fix.json` plus `.design-qa/dataset-fix-prompt.md` to the agent.");
@@ -469,6 +506,8 @@ Collection rules:
   lines.push("- `design:qa:validate-dataset`: `design-qa validate-dataset`");
   lines.push("- `design:qa:dataset-fix`: `design-qa dataset-fix`");
   lines.push("- `design:qa:prepare-collection`: `design-qa prepare-figma-collection`");
+  lines.push("- `design:qa:task:dataset`: `design-qa export-agent-task figma-dataset --agent codex`");
+  lines.push("- `design:qa:task:patch`: `design-qa export-agent-task patch --agent codex`");
   lines.push("- `design:qa:ingest`: `design-qa ingest hybrid --figma <url> --screenshot <path>`");
   lines.push("- `design:qa:generate`: `design-qa generate storybook`");
   lines.push("- `design:qa:eval`: `design-qa eval`");

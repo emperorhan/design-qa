@@ -152,6 +152,36 @@ export async function runDoctor(cwd = process.cwd()) {
         ? undefined
         : "run design-qa validate-dataset, then design-qa dataset-fix or regenerate the dataset with Codex/Claude + native Figma MCP",
   });
+  checks.push({
+    label: "figma-source",
+    ok: datasetValidation.report.sourceDetection.assetExportMode !== "remote-wrapper",
+    detail: `${datasetValidation.report.sourceDetection.mcpSource} / ${datasetValidation.report.sourceDetection.assetExportMode}`,
+    action:
+      datasetValidation.report.sourceDetection.assetExportMode !== "remote-wrapper"
+        ? undefined
+        : "remote wrapper assets are not usable exports; recollect SVG assets with desktop MCP localhost export",
+  });
+  checks.push({
+    label: "page-depth",
+    ok: datasetValidation.report.sourceDetection.pageCollectionDepth !== "shallow",
+    detail: datasetValidation.report.sourceDetection.pageCollectionDepth,
+    action:
+      datasetValidation.report.sourceDetection.pageCollectionDepth !== "shallow"
+        ? undefined
+        : "re-collect pages with nested or full-canvas node trees",
+  });
+  checks.push({
+    label: "registry-placeholders",
+    ok: datasetValidation.report.placeholderFixtureIssues.length === 0,
+    detail:
+      datasetValidation.report.placeholderFixtureIssues.length === 0
+        ? "no placeholder registry ids detected"
+        : datasetValidation.report.placeholderFixtureIssues.join("; "),
+    action:
+      datasetValidation.report.placeholderFixtureIssues.length === 0
+        ? undefined
+        : "replace placeholder fixture figmaNodeId values in the repo registry before treating this as a dataset failure",
+  });
 
   const iconDataset = loadIconDataset(cwd);
   const iconDatasetValidation = validateIconDataset(cwd);

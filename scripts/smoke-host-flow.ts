@@ -14,6 +14,7 @@ run(["init", "--repo", tmpDir, "--force"]);
 run(["validate-dataset", "--repo", tmpDir]);
 run(["dataset-fix", "--repo", tmpDir]);
 run(["prepare-figma-collection", "--repo", tmpDir]);
+run(["export-agent-task", "figma-dataset", "--agent", "codex", "--repo", tmpDir]);
 run(["ingest", "figma", "--repo", tmpDir]);
 run(["generate", "storybook", "--repo", tmpDir]);
 
@@ -62,10 +63,13 @@ fs.writeFileSync(
 );
 
 run(["eval", "--report-only", "--repo", tmpDir]);
+run(["export-agent-task", "patch", "--agent", "codex", "--repo", tmpDir]);
 
 assertExists(path.join(tmpDir, ".design-qa", "dataset-fix.json"));
 assertExists(path.join(tmpDir, ".design-qa", "figma", "collection-plan.json"));
+assertExists(path.join(tmpDir, ".design-qa", "agent-tasks", "codex-figma-dataset.md"));
 assertExists(path.join(tmpDir, ".design-qa", "patch-plan.json"));
+assertExists(path.join(tmpDir, ".design-qa", "agent-tasks", "codex-patch.md"));
 
 const patchPlan = JSON.parse(fs.readFileSync(path.join(tmpDir, ".design-qa", "patch-plan.json"), "utf-8")) as {
   stories: Array<{
@@ -92,6 +96,11 @@ const collectionPlan = JSON.parse(fs.readFileSync(path.join(tmpDir, ".design-qa"
 }>;
 if (!collectionPlan.every((item) => item.collectionItemId && item.recommendedAction && item.phase === "dataset")) {
   throw new Error("collection-plan.json is missing collection item linkage");
+}
+
+const datasetTaskPrompt = fs.readFileSync(path.join(tmpDir, ".design-qa", "agent-tasks", "codex-figma-dataset.md"), "utf-8");
+if (!datasetTaskPrompt.includes("currentColor") || !datasetTaskPrompt.includes("viewBox")) {
+  throw new Error("dataset task prompt is missing SVG normalization rules");
 }
 
 console.log(`smoke:host-flow passed (${tmpDir})`);

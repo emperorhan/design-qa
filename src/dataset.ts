@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { validateFigmaDataset, renderDatasetFixPrompt } from "./figma-dataset";
+import { normalizeIconDataset } from "./icons";
 import { loadRuntimeConfig, relativeToCwd } from "./node";
 
 export async function runValidateDataset(cwd = process.cwd()) {
@@ -50,6 +51,60 @@ export async function runDatasetFix(cwd = process.cwd()) {
   ].join("\n") + "\n";
 }
 
+export async function runDetectFigmaSource(cwd = process.cwd()) {
+  const runtime = await loadRuntimeConfig(cwd);
+  const validation = validateFigmaDataset(cwd, runtime.config);
+  return [
+    "# Figma Source Detection",
+    "",
+    `- MCP source: ${validation.report.sourceDetection.mcpSource}`,
+    `- Asset export mode: ${validation.report.sourceDetection.assetExportMode}`,
+    `- Desktop asset base URL: ${validation.report.sourceDetection.desktopAssetBaseUrl ?? "none"}`,
+    `- Page collection depth: ${validation.report.sourceDetection.pageCollectionDepth}`,
+    `- SVG normalization: ${validation.report.sourceDetection.svgNormalization}`,
+    `- Registry mode: ${validation.report.sourceDetection.registryMode}`,
+    `- Reasons: ${validation.report.sourceDetection.reasons.join(", ") || "none"}`,
+  ].join("\n") + "\n";
+}
+
+export async function runInspectDataset(cwd = process.cwd()) {
+  const runtime = await loadRuntimeConfig(cwd);
+  const validation = validateFigmaDataset(cwd, runtime.config);
+  return [
+    "# Dataset Inspection",
+    "",
+    `- Dataset root: ${relativeToCwd(cwd, validation.report.datasetRoot)}`,
+    `- MCP source: ${validation.report.sourceDetection.mcpSource}`,
+    `- Asset export mode: ${validation.report.sourceDetection.assetExportMode}`,
+    `- Page depth: ${validation.report.sourceDetection.pageCollectionDepth}`,
+    `- SVG normalization: ${validation.report.sourceDetection.svgNormalization}`,
+    `- Registry mode: ${validation.report.sourceDetection.registryMode}`,
+    `- Dataset issues: ${validation.report.datasetIssues.length}`,
+    `- Asset issues: ${validation.report.assetIssues.length}`,
+    `- Mapping issues: ${validation.report.mappingIssues.length}`,
+    `- Placeholder fixture issues: ${validation.report.placeholderFixtureIssues.length}`,
+    "",
+    "## Highlights",
+    ...validation.report.datasetIssues.map((issue) => `- dataset: ${issue}`),
+    ...validation.report.assetIssues.map((issue) => `- asset: ${issue}`),
+    ...validation.report.mappingIssues.map((issue) => `- mapping: ${issue}`),
+    ...validation.report.placeholderFixtureIssues.map((issue) => `- placeholder: ${issue}`),
+  ].join("\n") + "\n";
+}
+
+export async function runNormalizeIcons(cwd = process.cwd()) {
+  const runtime = await loadRuntimeConfig(cwd);
+  const result = normalizeIconDataset(cwd, runtime.generationDir);
+  return [
+    "# Normalize Icons",
+    "",
+    `- Dataset: ${relativeToCwd(cwd, result.datasetPath)}`,
+    `- Normalized SVGs: ${relativeToCwd(cwd, result.normalizedDir)}`,
+    `- Manifest: ${relativeToCwd(cwd, result.manifestPath)}`,
+    `- Icons: ${result.icons.length}`,
+  ].join("\n") + "\n";
+}
+
 function renderDatasetValidationMarkdown(report: ReturnType<typeof validateFigmaDataset>["report"], cwd: string) {
   const lines = [
     "# Figma Dataset Validation",
@@ -57,10 +112,23 @@ function renderDatasetValidationMarkdown(report: ReturnType<typeof validateFigma
     `- Dataset root: ${relativeToCwd(cwd, report.datasetRoot)}`,
     `- Manifest: ${relativeToCwd(cwd, report.manifestPath)}`,
     `- Extraction mode: ${report.extractionMode ?? "unknown"}`,
+    `- MCP source: ${report.sourceDetection.mcpSource}`,
+    `- Asset export mode: ${report.sourceDetection.assetExportMode}`,
+    `- Page depth: ${report.sourceDetection.pageCollectionDepth}`,
+    `- SVG normalization: ${report.sourceDetection.svgNormalization}`,
+    `- Registry mode: ${report.sourceDetection.registryMode}`,
     `- Registry coverage: ${report.registryNodeCoverage.covered}/${report.registryNodeCoverage.total}`,
     "",
-    "## File Checks",
+    "## Source Detection",
   ];
+  for (const reason of report.sourceDetection.reasons) {
+    lines.push(`- ${reason}`);
+  }
+  if (report.sourceDetection.reasons.length === 0) {
+    lines.push("- none");
+  }
+  lines.push("");
+  lines.push("## File Checks");
   for (const check of report.fileChecks) {
     lines.push(`- ${check.name}: ${check.ok ? "ok" : "fail"} (${check.detail})`);
   }
@@ -84,6 +152,22 @@ function renderDatasetValidationMarkdown(report: ReturnType<typeof validateFigma
   for (const check of report.screenshotChecks) {
     lines.push(`- ${check.name}: ${check.ok ? "ok" : "fail"} (${check.detail})`);
   }
+  lines.push("");
+  lines.push("## Page Depth Checks");
+  for (const check of report.pageDepthChecks) {
+    lines.push(`- ${check.name}: ${check.ok ? "ok" : "fail"} (${check.detail})`);
+  }
+  lines.push("");
+  lines.push("## Icon Completeness Checks");
+  for (const check of report.iconCompletenessChecks) {
+    lines.push(`- ${check.name}: ${check.ok ? "ok" : "fail"} (${check.detail})`);
+  }
+  lines.push("");
+  lines.push("## Issue Categories");
+  lines.push(`- datasetIssues: ${report.datasetIssues.join("; ") || "none"}`);
+  lines.push(`- assetIssues: ${report.assetIssues.join("; ") || "none"}`);
+  lines.push(`- mappingIssues: ${report.mappingIssues.join("; ") || "none"}`);
+  lines.push(`- placeholderFixtureIssues: ${report.placeholderFixtureIssues.join("; ") || "none"}`);
   lines.push("");
   lines.push("## Errors");
   if (report.errors.length === 0) {

@@ -11,6 +11,12 @@ export interface FigmaDatasetManifest {
   fileKey?: string;
   fileName?: string;
   pageName?: string;
+  mcpSource?: "remote" | "desktop" | "mixed" | "unknown";
+  assetExportMode?: "local-export" | "remote-wrapper" | "mixed" | "unavailable";
+  desktopAssetBaseUrl?: string;
+  pageCollectionDepth?: "shallow" | "nested" | "full-canvas";
+  svgNormalization?: "raw-only" | "partial" | "complete";
+  registryMode?: "real" | "contains-placeholders";
   includedFiles: string[];
   nodeCoverage?: {
     totalRegistryNodes: number;
@@ -108,6 +114,15 @@ export interface FigmaDatasetValidationReport {
   manifestPath: string;
   hasManifest: boolean;
   extractionMode: string | null;
+  sourceDetection: {
+    mcpSource: "remote" | "desktop" | "mixed" | "unknown";
+    assetExportMode: "local-export" | "remote-wrapper" | "mixed" | "unavailable";
+    desktopAssetBaseUrl: string | null;
+    pageCollectionDepth: "shallow" | "nested" | "full-canvas";
+    svgNormalization: "raw-only" | "partial" | "complete";
+    registryMode: "real" | "contains-placeholders";
+    reasons: string[];
+  };
   registryNodeCoverage: {
     total: number;
     covered: number;
@@ -129,6 +144,12 @@ export interface FigmaDatasetValidationReport {
   coverageChecks: DatasetCheck[];
   iconChecks: DatasetCheck[];
   screenshotChecks: DatasetCheck[];
+  pageDepthChecks: DatasetCheck[];
+  iconCompletenessChecks: DatasetCheck[];
+  datasetIssues: string[];
+  assetIssues: string[];
+  mappingIssues: string[];
+  placeholderFixtureIssues: string[];
   errors: string[];
   warnings: string[];
   fixPlan: DatasetFixPlan;
@@ -178,22 +199,33 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
   const dataset = loadFigmaDataset(cwd);
   const errors: string[] = [];
   const warnings: string[] = [];
+  const datasetIssues: string[] = [];
+  const assetIssues: string[] = [];
+  const mappingIssues: string[] = [];
+  const placeholderFixtureIssues: string[] = [];
   const manifestChecks: DatasetCheck[] = [];
   const fileChecks: DatasetCheck[] = [];
   const coverageChecks: DatasetCheck[] = [];
   const iconChecks: DatasetCheck[] = [];
   const screenshotChecks: DatasetCheck[] = [];
+  const pageDepthChecks: DatasetCheck[] = [];
+  const iconCompletenessChecks: DatasetCheck[] = [];
 
   const actualFiles = collectIncludedFiles(dataset);
   const registryNodes = Object.values(config.registry)
     .map((entry) => entry.figmaNodeId)
     .filter((value): value is string => Boolean(value));
+  const placeholderRegistryNodes = registryNodes.filter(isLikelyPlaceholderNodeId);
+  const realRegistryNodes = registryNodes.filter((nodeId) => !isLikelyPlaceholderNodeId(nodeId));
   const flattenedNodeIds = new Set(flattenNodeIds(dataset.nodes));
   const actualCoverage = {
-    total: registryNodes.length,
-    covered: registryNodes.filter((nodeId) => flattenedNodeIds.has(nodeId)).length,
-    missing: registryNodes.filter((nodeId) => !flattenedNodeIds.has(nodeId)),
+    total: realRegistryNodes.length,
+    covered: realRegistryNodes.filter((nodeId) => flattenedNodeIds.has(nodeId)).length,
+    missing: realRegistryNodes.filter((nodeId) => !flattenedNodeIds.has(nodeId)),
   };
+  const sourceDetection = detectDatasetSource(dataset, cwd);
+  sourceDetection.registryMode = placeholderRegistryNodes.length > 0 ? "contains-placeholders" : "real";
+  const pageDepth = detectPageCollectionDepth(dataset.nodes);
 
   if (!fs.existsSync(dataset.rootDir)) {
     errors.push(".design-qa/figma directory is missing");
@@ -201,7 +233,25 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
       dataset,
       errors,
       warnings,
-      report: buildDatasetReport(dataset, errors, warnings, config, manifestChecks, fileChecks, coverageChecks, iconChecks, screenshotChecks, actualCoverage),
+      report: buildDatasetReport(
+        dataset,
+        errors,
+        warnings,
+        config,
+        manifestChecks,
+        fileChecks,
+        coverageChecks,
+        iconChecks,
+        screenshotChecks,
+        pageDepthChecks,
+        iconCompletenessChecks,
+        actualCoverage,
+        sourceDetection,
+        datasetIssues,
+        assetIssues,
+        mappingIssues,
+        placeholderFixtureIssues,
+      ),
     };
   }
 
@@ -241,7 +291,44 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
       ["generatedAt", generatedAtOk, dataset.manifest.generatedAt, "error"],
       ["includedFiles", includedFilesOk, includedFilesOk ? "includedFiles match actual dataset files" : `declared=${dataset.manifest.includedFiles.join(", ")} actual=${actualFiles.join(", ")}`, "error"],
       ["completeness", completenessMismatches.length === 0, completenessMismatches.length === 0 ? "completeness flags match actual files" : completenessMismatches.join("; "), "error"],
-      ["nodeCoverage", nodeCoverageOk, nodeCoverageOk ? `${actualCoverage.covered}/${actualCoverage.total}` : "declared nodeCoverage does not match actual registry coverage", "error"],
+      [
+        "nodeCoverage",
+        nodeCoverageOk || placeholderRegistryNodes.length > 0,
+        nodeCoverageOk
+          ? `${actualCoverage.covered}/${actualCoverage.total}`
+          : placeholderRegistryNodes.length > 0
+            ? "placeholder registry ids present; nodeCoverage treated as fixture mismatch"
+            : "declared nodeCoverage does not match actual registry coverage",
+        placeholderRegistryNodes.length > 0 ? "warning" : "error",
+      ],
+      [
+        "mcpSource",
+        !dataset.manifest.mcpSource || dataset.manifest.mcpSource === sourceDetection.mcpSource,
+        !dataset.manifest.mcpSource ? `detected=${sourceDetection.mcpSource}` : `declared=${dataset.manifest.mcpSource} detected=${sourceDetection.mcpSource}`,
+        "warning",
+      ],
+      [
+        "assetExportMode",
+        !dataset.manifest.assetExportMode || dataset.manifest.assetExportMode === sourceDetection.assetExportMode,
+        !dataset.manifest.assetExportMode
+          ? `detected=${sourceDetection.assetExportMode}`
+          : `declared=${dataset.manifest.assetExportMode} detected=${sourceDetection.assetExportMode}`,
+        "warning",
+      ],
+      [
+        "pageCollectionDepth",
+        !dataset.manifest.pageCollectionDepth || dataset.manifest.pageCollectionDepth === pageDepth.depth,
+        !dataset.manifest.pageCollectionDepth ? `detected=${pageDepth.depth}` : `declared=${dataset.manifest.pageCollectionDepth} detected=${pageDepth.depth}`,
+        "warning",
+      ],
+      [
+        "registryMode",
+        !dataset.manifest.registryMode || dataset.manifest.registryMode === (placeholderRegistryNodes.length > 0 ? "contains-placeholders" : "real"),
+        !dataset.manifest.registryMode
+          ? `detected=${placeholderRegistryNodes.length > 0 ? "contains-placeholders" : "real"}`
+          : `declared=${dataset.manifest.registryMode}`,
+        "warning",
+      ],
     ];
     for (const [name, ok, detail, severity] of manifestItems) {
       manifestChecks.push({ name, ok, detail });
@@ -264,13 +351,39 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
     }
   }
 
+  const unmappedComponents = Object.values(config.registry)
+    .filter((entry) => entry.figmaNodeId && !isLikelyPlaceholderNodeId(entry.figmaNodeId))
+    .filter((entry) => {
+      const byStoryKey = dataset.components.some((component) => component.storyKey === entry.key);
+      const bySourceNode = dataset.components.some((component) => component.sourceNodeId === entry.figmaNodeId);
+      return !byStoryKey && !bySourceNode;
+    })
+    .map((entry) => entry.key);
+  if (unmappedComponents.length > 0) {
+    const message = `components.json is missing mappings for: ${unmappedComponents.join(", ")}`;
+    warnings.push(message);
+    mappingIssues.push(message);
+  }
+
   coverageChecks.push({
     name: "registryNodeCoverage",
     ok: actualCoverage.missing.length === 0,
     detail: `${actualCoverage.covered}/${actualCoverage.total} registry nodes covered`,
   });
   if (actualCoverage.missing.length > 0) {
-    errors.push(`dataset is missing registry node ids: ${actualCoverage.missing.join(", ")}`);
+    const message = `dataset is missing registry node ids: ${actualCoverage.missing.join(", ")}`;
+    errors.push(message);
+    datasetIssues.push(message);
+  }
+  if (placeholderRegistryNodes.length > 0) {
+    const message = `registry contains placeholder fixture node ids: ${placeholderRegistryNodes.join(", ")}`;
+    warnings.push(message);
+    placeholderFixtureIssues.push(message);
+    coverageChecks.push({
+      name: "placeholderRegistryNodes",
+      ok: false,
+      detail: message,
+    });
   }
 
   const iconValidation = validateIconDataset(cwd);
@@ -282,6 +395,7 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
     });
     errors.push(...iconValidation.errors.map((error) => `icons dataset: ${error}`));
     warnings.push(...iconValidation.warnings.map((warning) => `icons dataset: ${warning}`));
+    assetIssues.push(...iconValidation.errors.map((error) => `icons dataset: ${error}`));
     for (const check of iconValidation.checks) {
       iconChecks.push({
         name: check.id,
@@ -318,11 +432,13 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
         ok: false,
         detail: `missing declared screenshots: ${missingDeclaredScreenshots.join(", ")}`,
       });
-      errors.push(`manifest declared missing screenshots: ${missingDeclaredScreenshots.join(", ")}`);
+      const message = `manifest declared missing screenshots: ${missingDeclaredScreenshots.join(", ")}`;
+      errors.push(message);
+      assetIssues.push(message);
     }
   }
   for (const entry of Object.values(config.registry)) {
-    if (!entry.figmaNodeId) continue;
+    if (!entry.figmaNodeId || isLikelyPlaceholderNodeId(entry.figmaNodeId)) continue;
     const screenshotFile = path.join(dataset.screenshotsDir, `${entry.figmaNodeId.replaceAll(":", "-")}.png`);
     const ok = fs.existsSync(screenshotFile);
     screenshotChecks.push({
@@ -330,6 +446,38 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
       ok,
       detail: ok ? path.relative(dataset.rootDir, screenshotFile) : `missing screenshot for ${entry.figmaNodeId}`,
     });
+  }
+
+  pageDepthChecks.push({
+    name: "pageCollectionDepth",
+    ok: pageDepth.depth !== "shallow",
+    detail: `depth=${pageDepth.depth}, topLevelFrames=${pageDepth.topLevelFrameCount}, nestedNodes=${pageDepth.nestedNodeCount}, capturedSubtrees=${pageDepth.capturedSubtreeCount}`,
+  });
+  if (pageDepth.depth === "shallow") {
+    const message = "page stored as shallow tree only; nested node coverage is likely incomplete";
+    warnings.push(message);
+    datasetIssues.push(message);
+  }
+
+  const iconCompleteness = assessIconCompleteness(dataset.nodes, iconValidation.icons);
+  for (const check of iconCompleteness.checks) {
+    iconCompletenessChecks.push(check);
+  }
+  if (iconCompleteness.status === "likely-incomplete") {
+    const message = `icons likely incomplete for page: ${iconCompleteness.missingCandidates.join(", ") || "missing page usage candidates"}`;
+    warnings.push(message);
+    datasetIssues.push(message);
+  }
+
+  if (sourceDetection.assetExportMode === "remote-wrapper") {
+    const message = "remote MCP only; local asset export unavailable or wrapper SVG detected";
+    errors.push(message);
+    assetIssues.push(message);
+  }
+  if (sourceDetection.assetExportMode === "unavailable") {
+    const message = "asset export unavailable";
+    warnings.push(message);
+    assetIssues.push(message);
   }
 
   const report = buildDatasetReport(
@@ -342,7 +490,14 @@ export function validateFigmaDataset(cwd: string, config: LoadedDesignQaConfig) 
     coverageChecks,
     iconChecks,
     screenshotChecks,
+    pageDepthChecks,
+    iconCompletenessChecks,
     actualCoverage,
+    sourceDetection,
+    datasetIssues,
+    assetIssues,
+    mappingIssues,
+    placeholderFixtureIssues,
   );
   return {
     dataset,
@@ -386,8 +541,10 @@ export function renderDatasetFixPrompt(validation: ReturnType<typeof validateFig
     "## Repair rules",
     "- Prefer collection-plan.json item ids when re-collecting specific pages, components, or icons.",
     "- Use selection-based MCP for node ids and link-based MCP for canonical links/assets.",
-    "- Keep icons background-transparent and currentColor-friendly.",
-    "- Update manifest coverage, includedFiles, completeness, and warnings after the dataset is repaired.",
+    "- Remote MCP asset wrappers are not valid exports; prefer desktop MCP localhost asset export for SVG assets.",
+    "- Keep icons background-transparent, currentColor-friendly, and do not rely on fixed root width/height.",
+    "- Store raw icon exports separately from normalized SVG outputs.",
+    "- Update manifest coverage, includedFiles, completeness, source fields, and warnings after the dataset is repaired.",
   ];
   return `${lines.join("\n")}\n`;
 }
@@ -402,7 +559,14 @@ function buildDatasetReport(
   coverageChecks: DatasetCheck[],
   iconChecks: DatasetCheck[],
   screenshotChecks: DatasetCheck[],
+  pageDepthChecks: DatasetCheck[],
+  iconCompletenessChecks: DatasetCheck[],
   actualCoverage: { total: number; covered: number; missing: string[] },
+  sourceDetection: FigmaDatasetValidationReport["sourceDetection"],
+  datasetIssues: string[],
+  assetIssues: string[],
+  mappingIssues: string[],
+  placeholderFixtureIssues: string[],
 ): FigmaDatasetValidationReport {
   const fixPlan = buildDatasetFixPlan(dataset, config, manifestChecks, fileChecks, coverageChecks, iconChecks, screenshotChecks, actualCoverage);
   return {
@@ -410,6 +574,7 @@ function buildDatasetReport(
     manifestPath: dataset.manifestPath,
     hasManifest: Boolean(dataset.manifest),
     extractionMode: dataset.manifest?.extractionMode ?? null,
+    sourceDetection,
     registryNodeCoverage: actualCoverage,
     files: {
       context: fs.existsSync(dataset.contextPath) && Boolean(dataset.context),
@@ -427,6 +592,12 @@ function buildDatasetReport(
     coverageChecks,
     iconChecks,
     screenshotChecks,
+    pageDepthChecks,
+    iconCompletenessChecks,
+    datasetIssues: unique(datasetIssues),
+    assetIssues: unique(assetIssues),
+    mappingIssues: unique(mappingIssues),
+    placeholderFixtureIssues: unique(placeholderFixtureIssues),
     errors,
     warnings,
     fixPlan,
@@ -452,6 +623,7 @@ function buildDatasetFixPlan(
       phase: "dataset" as const,
     }));
   const missingComponents = Object.values(config.registry)
+    .filter((entry) => !entry.figmaNodeId || !isLikelyPlaceholderNodeId(entry.figmaNodeId))
     .filter((entry) => {
       const byStoryKey = dataset.components.some((component) => component.storyKey === entry.key);
       const bySourceNode = entry.figmaNodeId ? dataset.components.some((component) => component.sourceNodeId === entry.figmaNodeId) : false;
@@ -621,6 +793,111 @@ function recommendedActionForFile(fileName: string) {
 function findCollectionItemIdForNode(config: LoadedDesignQaConfig, nodeId: string) {
   const entry = Object.values(config.registry).find((item) => item.figmaNodeId === nodeId);
   return entry ? `page:${entry.key}` : `node:${nodeId}`;
+}
+
+function detectDatasetSource(dataset: LoadedFigmaDataset, cwd: string): FigmaDatasetValidationReport["sourceDetection"] {
+  const iconValidation = validateIconDataset(cwd);
+  const refs = [
+    ...iconValidation.checks.flatMap((check) => (check.originalRef ? [check.originalRef] : [])),
+    ...dataset.manifest?.warnings ?? [],
+  ];
+  const hasRemote = refs.some((value) => value.includes("www.figma.com/api/mcp/asset/")) || dataset.manifest?.extractionMode === "native-mcp-remote";
+  const desktopRef = refs.find((value) => value.includes("localhost:3845/assets/") || value.includes("127.0.0.1:3845/assets/")) ?? null;
+  const hasDesktop = Boolean(desktopRef) || dataset.manifest?.extractionMode === "native-mcp-desktop";
+  const hasRemoteWrapper = iconValidation.checks.some((check) => check.exportKind === "remote-wrapper-svg");
+  const hasLocalExport = iconValidation.checks.some((check) => check.exportKind === "local-svg");
+  const mcpSource = hasRemote && hasDesktop ? "mixed" : hasDesktop ? "desktop" : hasRemote ? "remote" : "unknown";
+  const assetExportMode = hasRemoteWrapper && hasLocalExport ? "mixed" : hasLocalExport ? "local-export" : hasRemoteWrapper ? "remote-wrapper" : "unavailable";
+  const reasons: string[] = [];
+  if (hasRemoteWrapper) reasons.push("remote wrapper SVG detected");
+  if (hasLocalExport) reasons.push("local SVG export detected");
+  if (mcpSource === "desktop" || mcpSource === "mixed") reasons.push("desktop MCP localhost assets available");
+  return {
+    mcpSource,
+    assetExportMode,
+    desktopAssetBaseUrl: desktopRef ? extractBaseUrl(desktopRef) : dataset.manifest?.desktopAssetBaseUrl ?? null,
+    pageCollectionDepth: detectPageCollectionDepth(dataset.nodes).depth,
+    svgNormalization: detectSvgNormalization(iconValidation.checks),
+    registryMode: hasLikelyPlaceholderRegistry(dataset.context) ? "contains-placeholders" : "real",
+    reasons,
+  };
+}
+
+function detectPageCollectionDepth(nodes: FigmaDatasetNode[]) {
+  const topLevelFrameCount = nodes.length;
+  const nestedNodeCount = countNodes(nodes) - topLevelFrameCount;
+  const capturedSubtreeCount = nodes.filter((node) => Boolean(node.children?.length)).length;
+  const depth = nestedNodeCount === 0 ? "shallow" : topLevelFrameCount >= 5 && nestedNodeCount >= topLevelFrameCount * 2 ? "full-canvas" : "nested";
+  return {
+    depth,
+    topLevelFrameCount,
+    nestedNodeCount,
+    capturedSubtreeCount,
+  } as const;
+}
+
+function assessIconCompleteness(nodes: FigmaDatasetNode[], icons: Array<{ name: string; nodeId?: string; usagePages?: string[]; usage?: string[] }>) {
+  const iconLikeNodes = flattenNodes(nodes).filter((node) => isIconLikeNode(node));
+  const iconNames = new Set(icons.map((icon) => icon.name.toLowerCase()));
+  const missingCandidates = iconLikeNodes
+    .filter((node) => {
+      const normalizedName = node.name.toLowerCase();
+      const exactOrPartialMatch = Array.from(iconNames).some((iconName) => normalizedName.includes(iconName) || iconName.includes(normalizedName));
+      return !exactOrPartialMatch && /qr|scan|code/i.test(normalizedName);
+    })
+    .map((node) => node.name);
+  const status = iconLikeNodes.length === 0 ? "unknown" : missingCandidates.length > 0 ? "likely-incomplete" : "complete";
+  return {
+    status,
+    missingCandidates: unique(missingCandidates),
+    checks: [
+      {
+        name: "iconUsageCoverage",
+        ok: status !== "likely-incomplete",
+        detail: `${icons.length} collected icons vs ${iconLikeNodes.length} icon-like nodes in page tree`,
+      },
+    ] as DatasetCheck[],
+  };
+}
+
+function detectSvgNormalization(checks: Array<{ normalizationStatus: "raw" | "normalized" | "invalid" }>) {
+  if (checks.length === 0) return "raw-only" as const;
+  const normalizedCount = checks.filter((check) => check.normalizationStatus === "normalized").length;
+  if (normalizedCount === checks.length) return "complete" as const;
+  if (normalizedCount === 0) return "raw-only" as const;
+  return "partial" as const;
+}
+
+function extractBaseUrl(value: string) {
+  const match = value.match(/^(https?:\/\/[^/]+)/i);
+  return match?.[1] ?? value;
+}
+
+function hasLikelyPlaceholderRegistry(context: FigmaDatasetContext | null) {
+  return Boolean(context?.nodeIds?.some(isLikelyPlaceholderNodeId));
+}
+
+function isLikelyPlaceholderNodeId(nodeId: string) {
+  return /^123:\d+$/.test(nodeId);
+}
+
+function flattenNodes(nodes: FigmaDatasetNode[]) {
+  const flattened: FigmaDatasetNode[] = [];
+  const stack = [...nodes];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    flattened.push(node);
+    if (node.children) stack.push(...node.children);
+  }
+  return flattened;
+}
+
+function countNodes(nodes: FigmaDatasetNode[]) {
+  return flattenNodes(nodes).length;
+}
+
+function isIconLikeNode(node: FigmaDatasetNode) {
+  return ["VECTOR", "BOOLEAN_OPERATION", "INSTANCE", "COMPONENT"].includes(node.type) && Boolean(node.name);
 }
 
 function readJson<T = unknown>(filePath: string): T | null {

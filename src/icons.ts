@@ -9,11 +9,20 @@ export interface IconDatasetEntry {
   semanticRole?: string;
   svgPath: string;
   usage?: string[];
+  usagePages?: string[];
+  usageNodes?: string[];
   libraryCandidate?: string;
   viewport?: {
     width: number;
     height: number;
   };
+  source?: "remote" | "desktop" | "unknown";
+  exportKind?: "local-svg" | "remote-wrapper-svg" | "image-wrapper-svg" | "unknown";
+  normalizationStatus?: "raw" | "normalized" | "invalid";
+  rawSvgPath?: string;
+  normalizedSvgPath?: string;
+  originalRef?: string;
+  resolvedLocalPath?: string;
   background?: {
     hasFill: boolean;
     fillColor: string | null;
@@ -34,6 +43,11 @@ export interface IconValidationCheck {
   hasRootDimensions: boolean;
   hasHardcodedColors: boolean;
   hasBackgroundRect: boolean;
+  exportKind: "local-svg" | "remote-wrapper-svg" | "image-wrapper-svg" | "unknown";
+  normalizationStatus: "raw" | "normalized" | "invalid";
+  detectedSource: "remote" | "desktop" | "unknown";
+  originalRef: string | null;
+  localhostAssetCandidate: boolean;
   errors: string[];
   warnings: string[];
 }
@@ -69,6 +83,11 @@ export function validateIconDataset(cwd: string) {
       hasRootDimensions: false,
       hasHardcodedColors: false,
       hasBackgroundRect: false,
+      exportKind: icon.exportKind ?? "unknown",
+      normalizationStatus: icon.normalizationStatus ?? "raw",
+      detectedSource: icon.source ?? "unknown",
+      originalRef: icon.originalRef ?? null,
+      localhostAssetCandidate: false,
       errors: [],
       warnings: [],
     };
@@ -104,13 +123,29 @@ export function validateIconDataset(cwd: string) {
       continue;
     }
     check.isSvg = true;
+    const exportKind = detectSvgExportKind(svg, icon.originalRef);
+    check.exportKind = icon.exportKind ?? exportKind;
+    check.detectedSource = detectSvgSource(svg, icon.originalRef, check.exportKind);
+    check.originalRef = icon.originalRef ?? extractReferencedAsset(svg);
+    check.localhostAssetCandidate =
+      check.originalRef?.includes("localhost:3845/assets/") === true ||
+      check.originalRef?.includes("127.0.0.1:3845/assets/") === true;
     check.hasViewBox = Boolean(extractViewBox(svg));
     check.hasRootDimensions = /<svg\b[^>]*\s(width|height)=["'][^"']+["']/i.test(svg);
     check.hasHardcodedColors = /\s(fill|stroke)=["'](?!none|currentColor)[^"']+["']/i.test(svg);
     check.hasBackgroundRect = detectBackgroundRect(svg, extractViewBox(svg));
+    const normalizedSvgPath = icon.normalizedSvgPath ? path.resolve(cwd, icon.normalizedSvgPath) : null;
+    check.normalizationStatus =
+      icon.normalizationStatus ??
+      (normalizedSvgPath && fs.existsSync(normalizedSvgPath) ? "normalized" : check.hasRootDimensions || check.hasHardcodedColors || check.hasBackgroundRect ? "raw" : "normalized");
     if (!check.hasViewBox && !icon.viewport) {
       check.errors.push(`${icon.id} has no viewBox and no viewport metadata`);
       errors.push(`${icon.id} has no viewBox and no viewport metadata`);
+    }
+    if (check.exportKind === "remote-wrapper-svg" || check.exportKind === "image-wrapper-svg") {
+      check.errors.push(`${icon.id} is a wrapper SVG and not a usable local export`);
+      errors.push(`${icon.id} is a wrapper SVG and not a usable local export`);
+      check.normalizationStatus = "invalid";
     }
     if (check.hasRootDimensions) {
       check.warnings.push(`${icon.id} SVG still has root width/height and should be normalized before use`);
@@ -132,21 +167,30 @@ export function validateIconDataset(cwd: string) {
 
 export function normalizeIconDataset(cwd: string, generationDir: string) {
   const { datasetPath, icons } = loadIconDataset(cwd);
-  const normalizedDir = path.join(generationDir, "icons");
+  const normalizedDir = path.join(cwd, ".design-qa", "figma", "icons", "normalized");
+  const generatedDir = path.join(generationDir, "icons");
   fs.mkdirSync(normalizedDir, { recursive: true });
+  fs.mkdirSync(generatedDir, { recursive: true });
 
   const normalizedIcons = icons.map((icon) => {
-    const absSvgPath = path.resolve(cwd, icon.svgPath);
+    const rawRelativePath = icon.rawSvgPath ?? icon.svgPath;
+    const absSvgPath = path.resolve(cwd, rawRelativePath);
     const rawSvg = fs.readFileSync(absSvgPath, "utf-8");
     const normalizedSvg = normalizeSvg(rawSvg, icon.viewport);
     const componentName = sanitizeIconComponentName(icon.name || icon.id);
     const normalizedSvgPath = path.join(normalizedDir, `${icon.id}.svg`);
+    const generatedSvgPath = path.join(generatedDir, `${icon.id}.svg`);
     fs.writeFileSync(normalizedSvgPath, normalizedSvg);
+    fs.writeFileSync(generatedSvgPath, normalizedSvg);
 
     return {
       ...icon,
-      componentName,
+      rawSvgPath: path.relative(cwd, absSvgPath),
       normalizedSvgPath,
+      normalizationStatus: "normalized" as const,
+      exportKind: icon.exportKind ?? detectSvgExportKind(rawSvg, icon.originalRef),
+      source: icon.source ?? detectSvgSource(rawSvg, icon.originalRef, icon.exportKind ?? detectSvgExportKind(rawSvg, icon.originalRef)),
+      componentName,
       normalizedSvg,
     } satisfies NormalizedIconEntry;
   });
@@ -269,4 +313,31 @@ function sanitizeIconComponentName(value: string) {
     .map((part) => part[0]?.toUpperCase() + part.slice(1))
     .join("");
   return `${base || "Generated"}Icon`;
+}
+
+function detectSvgExportKind(svg: string, originalRef?: string) {
+  const referenced = originalRef ?? extractReferencedAsset(svg);
+  if (/<image\b/i.test(svg) && referenced) {
+    if (referenced.includes("www.figma.com/api/mcp/asset/")) {
+      return "remote-wrapper-svg" as const;
+    }
+    return "image-wrapper-svg" as const;
+  }
+  return "local-svg" as const;
+}
+
+function detectSvgSource(svg: string, originalRef: string | undefined, exportKind: IconValidationCheck["exportKind"]) {
+  const referenced = originalRef ?? extractReferencedAsset(svg) ?? "";
+  if (referenced.includes("localhost:3845") || referenced.includes("127.0.0.1:3845")) {
+    return "desktop" as const;
+  }
+  if (referenced.includes("www.figma.com/api/mcp/asset/") || exportKind === "remote-wrapper-svg") {
+    return "remote" as const;
+  }
+  return "unknown" as const;
+}
+
+function extractReferencedAsset(svg: string) {
+  const match = svg.match(/\s(?:href|xlink:href)=["']([^"']+)["']/i);
+  return match?.[1] ?? null;
 }
