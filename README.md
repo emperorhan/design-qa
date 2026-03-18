@@ -155,6 +155,10 @@ import type { DesignQaEntry } from "@emperorhan/design-qa/storybook";
 import type { DesignQaConfig } from "@emperorhan/design-qa/config";
 ```
 
+## Team Guide
+
+See [TEAM_GUIDE.md](./TEAM_GUIDE.md) for a step-by-step daily workflow guide to share with your team.
+
 ## License
 
 MIT
