@@ -1,0 +1,58 @@
+{
+  "name": "@emperorhan/design-qa",
+  "version": "1.0.0",
+  "description": "Figma → Storybook Design QA toolkit for Claude Code",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./storybook": {
+      "types": "./dist/storybook.d.ts",
+      "import": "./dist/storybook.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    }
+  },
+  "bin": {
+    "design-qa": "./bin/design-qa.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "prepublishOnly": "tsc"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^25.3.5",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  },
+  "files": [
+    "dist/",
+    "src/",
+    "templates/",
+    "bin/"
+  ],
+  "keywords": [
+    "design-qa",
+    "figma",
+    "storybook",
+    "claude-code",
+    "design-system"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/emperorhan/design-qa",
+    "directory": "dashboard/packages/design-qa"
+  }
+}
