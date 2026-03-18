@@ -31,6 +31,33 @@ $ARGUMENTS 에 대해 Design QA 폐쇄 루프를 수행한다.
 }
 ```
 
+## SVG 아이콘 정규화
+
+아이콘 디렉토리에 새 SVG가 추가되면 자동으로 정규화한다.
+
+| 항목 | 처리 |
+|------|------|
+| `width`/`height` 속성 | **제거** (CSS에서 크기 제어) |
+| `viewBox` | `"0 0 24 24"` 보장 |
+| `fill` 값 | 하드코딩 색상 → **`currentColor`** 변환 |
+| `fill="none"` | 유지 (투명 영역) |
+| `xmlns:xlink`, `class`, `style` | 제거 |
+| 빈 `<path d=""/>` | 제거 |
+
+Before:
+```xml
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <path d="M10.828 12l4.95..." fill="#060607"/>
+</svg>
+```
+
+After:
+```xml
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+  <path d="M10.828 12l4.95..."/>
+</svg>
+```
+
 ## 폐쇄 루프 절차
 
 ### Step 1. 설정 읽기

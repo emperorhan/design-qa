@@ -27,11 +27,10 @@
     "build": "tsc",
     "prepublishOnly": "tsc"
   },
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "^25.3.5",
     "tsx": "^4.21.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.9.3"
   },
   "files": [
     "dist/",
