@@ -88,7 +88,7 @@ claude
 #### All pages sequentially
 
 ```
-Figma의 모든 페이지에 대해서 순차적으로 design-qa 해줘
+Run design-qa for all Figma pages sequentially
 ```
 
 #### New page implementation + QA

@@ -1,5 +1,7 @@
 # @emperorhan/design-qa
 
+[한국어](./README.ko.md)
+
 Figma to Storybook Design QA toolkit for [Claude Code](https://claude.ai/claude-code).
 Run `/design-qa <Component>` to perform automated Figma-based design QA.
 
