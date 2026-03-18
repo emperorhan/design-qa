@@ -159,6 +159,8 @@ import type { DesignQaConfig } from "@emperorhan/design-qa/config";
 
 See [TEAM_GUIDE.md](./TEAM_GUIDE.md) for a step-by-step daily workflow guide to share with your team.
 
+[한국어 가이드](./TEAM_GUIDE.ko.md)
+
 ## License
 
 MIT
